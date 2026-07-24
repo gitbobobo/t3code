@@ -6,6 +6,8 @@ import type {
   ServerProvider,
   ServerProviderAuth,
   ServerProviderModel,
+  ServerProviderSkill,
+  ServerProviderSlashCommand,
   ServerProviderState,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
@@ -46,6 +48,7 @@ import {
 } from "../providerMaintenance.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import { CursorListAvailableModelsResponse } from "../acp/CursorAcpExtension.ts";
+import { discoverCursorSkills } from "../Drivers/CursorSkills.ts";
 
 const decodeCursorListAvailableModelsResponse = Schema.decodeUnknownEffect(
   CursorListAvailableModelsResponse,
@@ -628,6 +631,8 @@ export function buildCursorProviderSnapshot(input: {
   readonly parsed: CursorAboutResult;
   readonly discoveredModels?: ReadonlyArray<ServerProviderModel>;
   readonly discoveryWarning?: string;
+  readonly slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
+  readonly skills?: ReadonlyArray<ServerProviderSkill>;
 }): ServerProviderDraft {
   const message = joinProviderMessages(input.parsed.message, input.discoveryWarning);
   return buildServerProvider({
@@ -639,6 +644,8 @@ export function buildCursorProviderSnapshot(input: {
       input.cursorSettings.customModels,
       EMPTY_CAPABILITIES,
     ),
+    slashCommands: input.slashCommands ?? [],
+    skills: input.skills ?? [],
     probe: {
       installed: true,
       version: input.parsed.version,
@@ -987,11 +994,13 @@ const runCursorAboutCommand = (cursorSettings: CursorSettings, environment?: Nod
 export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(function* (
   cursorSettings: CursorSettings,
   environment?: NodeJS.ProcessEnv,
+  cwd?: string,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
+  const env = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = getCursorFallbackModels(cursorSettings);
 
@@ -1011,10 +1020,17 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
     });
   }
 
-  // Single `agent about` probe: returns version + auth status in one call.
-  const aboutProbe = yield* runCursorAboutCommand(cursorSettings, environment).pipe(
-    Effect.timeoutOption(ABOUT_TIMEOUT_MS),
-    Effect.result,
+  // Filesystem skill discovery is independent of the CLI about probe — run
+  // them together so skills still attach on about failure/timeout paths.
+  const [aboutProbe, { skills, slashCommands }] = yield* Effect.all(
+    [
+      runCursorAboutCommand(cursorSettings, env).pipe(
+        Effect.timeoutOption(ABOUT_TIMEOUT_MS),
+        Effect.result,
+      ),
+      discoverCursorSkills(cwd, env),
+    ],
+    { concurrency: "unbounded" },
   );
 
   if (Result.isFailure(aboutProbe)) {
@@ -1027,6 +1043,8 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      slashCommands,
+      skills,
       probe: {
         installed: !isCommandMissingCause(error),
         version: null,
@@ -1045,6 +1063,8 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      slashCommands,
+      skills,
       probe: {
         installed: true,
         version: null,
@@ -1068,6 +1088,8 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       enabled: cursorSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      slashCommands,
+      skills,
       probe: {
         installed: true,
         version: parsed.version,
@@ -1084,7 +1106,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   let discoveryWarning: string | undefined;
   if (parsed.auth.status !== "unauthenticated") {
     const discoveryExit = yield* Effect.exit(
-      discoverCursorModelsViaAcp(cursorSettings, environment).pipe(
+      discoverCursorModelsViaAcp(cursorSettings, env).pipe(
         Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
       ),
     );
@@ -1109,6 +1131,8 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       Option.filter(discoveredModels, (models) => models.length > 0),
       () => [] as const,
     ),
+    slashCommands,
+    skills,
     ...(discoveryWarning ? { discoveryWarning } : {}),
   });
 });

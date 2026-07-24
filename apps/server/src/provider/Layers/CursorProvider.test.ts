@@ -334,11 +334,31 @@ describe("buildCursorProviderSnapshot", () => {
           auth: { status: "authenticated", type: "Team", label: "Cursor Team Subscription" },
         },
         discoveryWarning: "Cursor ACP model discovery timed out after 15000ms.",
+        slashCommands: [{ name: "deploy", description: "Deploy the app." }],
+        skills: [
+          {
+            name: "deploy",
+            path: "/tmp/.cursor/skills/deploy/SKILL.md",
+            enabled: true,
+            scope: "user",
+            description: "Deploy the app.",
+          },
+        ],
       }),
     ).toMatchObject({
       status: "warning",
       message: "Cursor ACP model discovery timed out after 15000ms.",
       models: [],
+      slashCommands: [{ name: "deploy", description: "Deploy the app." }],
+      skills: [
+        {
+          name: "deploy",
+          path: "/tmp/.cursor/skills/deploy/SKILL.md",
+          enabled: true,
+          scope: "user",
+          description: "Deploy the app.",
+        },
+      ],
     });
   });
 
@@ -367,6 +387,8 @@ describe("buildCursorProviderSnapshot", () => {
           isCustom: true,
         },
       ],
+      slashCommands: [],
+      skills: [],
     });
   });
 });
@@ -446,6 +468,63 @@ describe("checkCursorProviderStatus", () => {
     });
   });
 
+  it("still attaches filesystem skills when the Cursor CLI command is missing", async () => {
+    const fixture = await runNode(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-provider-skills-missing-cli-",
+        });
+        const homeDir = path.join(tempDir, "home");
+        const cursorConfigDir = path.join(tempDir, "cursor-config");
+        const skillDir = path.join(cursorConfigDir, "skills", "offline-skill");
+        yield* fileSystem.makeDirectory(skillDir, { recursive: true });
+        const skillPath = path.join(skillDir, "SKILL.md");
+        yield* fileSystem.writeFileString(
+          skillPath,
+          ["---", "name: offline-skill", "description: Available without CLI.", "---"].join("\n"),
+        );
+        return { homeDir, cursorConfigDir, skillPath };
+      }),
+    );
+
+    const provider = await runNode(
+      checkCursorProviderStatus(
+        {
+          enabled: true,
+          binaryPath: missingCursorBinaryPath,
+          apiEndpoint: "",
+          customModels: [],
+        },
+        {
+          ...process.env,
+          HOME: fixture.homeDir,
+          CURSOR_CONFIG_DIR: fixture.cursorConfigDir,
+        },
+      ),
+    );
+
+    expect(provider).toMatchObject({
+      installed: false,
+      status: "error",
+      message: cursorCliCommandMissingMessage,
+    });
+    expect(provider.skills).toEqual([
+      {
+        name: "offline-skill",
+        path: fixture.skillPath,
+        enabled: true,
+        scope: "user",
+        description: "Available without CLI.",
+      },
+    ]);
+    expect(provider.slashCommands).toEqual([
+      { name: "offline-skill", description: "Available without CLI." },
+    ]);
+  });
+
   it("passes the injected environment to ACP model discovery", async () => {
     const { requestLogPath, wrapperPath } = await runNode(makeProviderStatusEnvFixture());
 
@@ -471,6 +550,70 @@ describe("checkCursorProviderStatus", () => {
       "claude-opus-4-6",
     ]);
     await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
+  });
+
+  it("includes filesystem-discovered skills and slashCommands in the snapshot", async () => {
+    const fixture = await runNode(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-provider-skills-status-",
+        });
+        const homeDir = path.join(tempDir, "home");
+        const cursorConfigDir = path.join(tempDir, "cursor-config");
+        const workspace = path.join(tempDir, "workspace");
+        const skillDir = path.join(cursorConfigDir, "skills", "status-skill");
+        yield* fileSystem.makeDirectory(skillDir, { recursive: true });
+        yield* fileSystem.makeDirectory(workspace, { recursive: true });
+        const skillPath = path.join(skillDir, "SKILL.md");
+        yield* fileSystem.writeFileString(
+          skillPath,
+          ["---", "name: status-skill", "description: From status check.", "---"].join("\n"),
+        );
+        const { requestLogPath, wrapperPath } = yield* makeProviderStatusEnvFixture();
+        return {
+          homeDir,
+          cursorConfigDir,
+          workspace,
+          skillPath,
+          requestLogPath,
+          wrapperPath,
+        };
+      }),
+    );
+
+    const provider = await runNode(
+      checkCursorProviderStatus(
+        {
+          enabled: true,
+          binaryPath: fixture.wrapperPath,
+          apiEndpoint: "",
+          customModels: [],
+        },
+        {
+          ...process.env,
+          HOME: fixture.homeDir,
+          CURSOR_CONFIG_DIR: fixture.cursorConfigDir,
+          T3_ACP_REQUEST_LOG_PATH: fixture.requestLogPath,
+        },
+        fixture.workspace,
+      ),
+    );
+
+    expect(provider.skills).toEqual([
+      {
+        name: "status-skill",
+        path: fixture.skillPath,
+        enabled: true,
+        scope: "user",
+        description: "From status check.",
+      },
+    ]);
+    expect(provider.slashCommands).toEqual([
+      { name: "status-skill", description: "From status check." },
+    ]);
   });
 });
 
