@@ -36,9 +36,8 @@ import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import {
   formatHeadlessServeOutput,
-  formatHostForUrl,
-  isWildcardHost,
   issueHeadlessServeAccessInfo,
+  resolveHeadlessConnectionString,
 } from "./startupAccess.ts";
 
 export class ServerRuntimeStartupError extends Schema.TaggedErrorClass<ServerRuntimeStartupError>()(
@@ -252,11 +251,9 @@ export const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
 const resolveStartupBrowserTarget = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-  const localUrl = `http://localhost:${serverConfig.port}`;
-  const bindUrl =
-    serverConfig.host && !isWildcardHost(serverConfig.host)
-      ? `http://${formatHostForUrl(serverConfig.host)}:${serverConfig.port}`
-      : localUrl;
+  // Wildcard binds (e.g. 0.0.0.0 from `pnpm start`) resolve to a LAN address so
+  // the printed pairing URL is reachable from other devices on the network.
+  const bindUrl = resolveHeadlessConnectionString(serverConfig.host, serverConfig.port);
   const baseTarget = serverConfig.devUrl?.toString() ?? bindUrl;
   return yield* Effect.succeed(serverConfig.mode === "desktop" ? baseTarget : undefined).pipe(
     Effect.flatMap((target) =>
