@@ -7,6 +7,8 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -22,6 +24,7 @@ import {
   openCodeRuntimeErrorDetail,
   type OpenCodeInventory,
 } from "../opencodeRuntime.ts";
+import { discoverOpenCodeSkills } from "../Drivers/OpenCodeSkills.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
 
 const OPENCODE_PRESENTATION = {
@@ -299,33 +302,16 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   openCodeSettings: OpenCodeSettings,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
-): Effect.fn.Return<ServerProviderDraft, never, OpenCodeRuntime> {
+): Effect.fn.Return<
+  ServerProviderDraft,
+  never,
+  OpenCodeRuntime | FileSystem.FileSystem | Path.Path
+> {
   const openCodeRuntime = yield* OpenCodeRuntime;
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const customModels = openCodeSettings.customModels;
   const isExternalServer = openCodeSettings.serverUrl.trim().length > 0;
-
-  const fallback = (cause: unknown, version: string | null = null) => {
-    const failure = formatOpenCodeProbeError({
-      cause,
-      isExternalServer,
-      serverUrl: openCodeSettings.serverUrl,
-    });
-    return buildServerProvider({
-      presentation: OPENCODE_PRESENTATION,
-      enabled: openCodeSettings.enabled,
-      checkedAt,
-      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
-      probe: {
-        installed: failure.installed,
-        version,
-        status: "error",
-        auth: { status: "unknown" },
-        message: failure.message,
-      },
-    });
-  };
 
   if (!openCodeSettings.enabled) {
     return buildServerProvider({
@@ -344,6 +330,33 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       },
     });
   }
+
+  // Filesystem skill discovery is independent of the CLI/server probes — it
+  // never fails, so skills still attach on every probe failure path below.
+  const { skills, slashCommands } = yield* discoverOpenCodeSkills(cwd, resolvedEnvironment);
+
+  const fallback = (cause: unknown, version: string | null = null) => {
+    const failure = formatOpenCodeProbeError({
+      cause,
+      isExternalServer,
+      serverUrl: openCodeSettings.serverUrl,
+    });
+    return buildServerProvider({
+      presentation: OPENCODE_PRESENTATION,
+      enabled: openCodeSettings.enabled,
+      checkedAt,
+      models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+      slashCommands,
+      skills,
+      probe: {
+        installed: failure.installed,
+        version,
+        status: "error",
+        auth: { status: "unknown" },
+        message: failure.message,
+      },
+    });
+  };
 
   let version: string | null = null;
   if (!isExternalServer) {
@@ -379,6 +392,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         enabled: openCodeSettings.enabled,
         checkedAt,
         models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+        slashCommands,
+        skills,
         probe: {
           installed: true,
           version,
@@ -435,6 +450,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     enabled: true,
     checkedAt,
     models,
+    slashCommands,
+    skills,
     probe: {
       installed: true,
       version,

@@ -3,7 +3,9 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { beforeEach } from "vite-plus/test";
 
@@ -227,6 +229,80 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         snapshot.message,
         "Failed to execute OpenCode CLI health check: opencode models failed",
       );
+    }),
+  );
+
+  it.effect("includes filesystem-discovered skills and slashCommands in the snapshot", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-provider-" });
+      const homeDir = path.join(tempDir, "home");
+      const workspace = path.join(tempDir, "workspace");
+      const skillDir = path.join(workspace, ".opencode", "skills", "status-skill");
+      yield* fs.makeDirectory(skillDir, { recursive: true });
+      const skillPath = path.join(skillDir, "SKILL.md");
+      yield* fs.writeFileString(
+        skillPath,
+        ["---", "name: status-skill", "description: From status check.", "---"].join("\n"),
+      );
+
+      const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), workspace, {
+        ...process.env,
+        HOME: homeDir,
+      });
+
+      NodeAssert.deepEqual(snapshot.skills, [
+        {
+          name: "status-skill",
+          path: skillPath,
+          enabled: true,
+          scope: "project",
+          description: "From status check.",
+        },
+      ]);
+      NodeAssert.deepEqual(snapshot.slashCommands, [
+        { name: "status-skill", description: "From status check." },
+      ]);
+    }),
+  );
+
+  it.effect("still attaches filesystem skills when the OpenCode CLI is missing", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-provider-" });
+      const homeDir = path.join(tempDir, "home");
+      const workspace = path.join(tempDir, "workspace");
+      yield* fs.makeDirectory(workspace, { recursive: true });
+      const skillDir = path.join(homeDir, ".config", "opencode", "skills", "offline-skill");
+      yield* fs.makeDirectory(skillDir, { recursive: true });
+      const skillPath = path.join(skillDir, "SKILL.md");
+      yield* fs.writeFileString(
+        skillPath,
+        ["---", "name: offline-skill", "description: Available without CLI.", "---"].join("\n"),
+      );
+      runtimeMock.state.runVersionError = new Error("spawn opencode ENOENT");
+
+      const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), workspace, {
+        ...process.env,
+        HOME: homeDir,
+      });
+
+      NodeAssert.equal(snapshot.status, "error");
+      NodeAssert.equal(snapshot.installed, false);
+      NodeAssert.deepEqual(snapshot.skills, [
+        {
+          name: "offline-skill",
+          path: skillPath,
+          enabled: true,
+          scope: "user",
+          description: "Available without CLI.",
+        },
+      ]);
+      NodeAssert.deepEqual(snapshot.slashCommands, [
+        { name: "offline-skill", description: "Available without CLI." },
+      ]);
     }),
   );
 });
