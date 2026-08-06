@@ -12,40 +12,57 @@ export class ClipboardApiUnavailableError extends Schema.TaggedErrorClass<Clipbo
   }
 }
 
-export class ClipboardWriteError extends Schema.TaggedErrorClass<ClipboardWriteError>()(
-  "ClipboardWriteError",
-  {
-    target: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to copy ${this.target} to the clipboard.`;
+// execCommand is deprecated but works in non-secure contexts (plain HTTP over a
+// LAN) where the Async Clipboard API (navigator.clipboard) is unavailable.
+async function writeTextViaExecCommand(value: string): Promise<boolean> {
+  if (typeof document === "undefined" || typeof document.execCommand !== "function") {
+    return false;
   }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+
+  const selection = document.getSelection();
+  const savedRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+  let copied = false;
+  try {
+    document.body.appendChild(textarea);
+    textarea.select();
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    document.body.removeChild(textarea);
+    if (savedRange && selection) {
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+    }
+  }
+
+  return copied;
 }
 
 export async function writeTextToClipboard(value: string, target = "text") {
-  if (
-    typeof window === "undefined" ||
-    typeof navigator === "undefined" ||
-    !navigator.clipboard?.writeText
-  ) {
-    throw new ClipboardApiUnavailableError({
-      target,
-    });
-  }
-
   if (!value) return false;
 
   try {
-    await navigator.clipboard.writeText(value);
-    return true;
-  } catch (cause) {
-    throw new ClipboardWriteError({
-      target,
-      cause,
-    });
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall through to the execCommand fallback.
   }
+
+  if (await writeTextViaExecCommand(value)) {
+    return true;
+  }
+
+  throw new ClipboardApiUnavailableError({
+    target,
+  });
 }
 
 export function useCopyToClipboard<TContext = void>({
