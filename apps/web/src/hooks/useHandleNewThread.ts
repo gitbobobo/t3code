@@ -4,7 +4,12 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -17,6 +22,7 @@ import {
 } from "../composerDraftStore";
 import { newDraftId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
+import { canCreateThreadInSidebarDeviceScope } from "../components/SidebarDeviceScope.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
   getProjectOrderKey,
@@ -34,6 +40,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { useSidebarDeviceScope } from "./useSidebarDeviceScope";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
@@ -436,6 +443,7 @@ export function useNewThreadHandler() {
 
 export function useHandleNewThread() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const { environments, scopeEnvironmentId } = useSidebarDeviceScope();
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -463,15 +471,57 @@ export function useHandleNewThread() {
       ],
     });
   }, [projectOrder, projects]);
+  const scopedEnvironmentId = scopeEnvironmentId ? EnvironmentId.make(scopeEnvironmentId) : null;
+  const defaultProjectRef = useMemo(() => {
+    const first = scopedEnvironmentId
+      ? orderedProjects.find((project) => project.environmentId === scopedEnvironmentId)
+      : orderedProjects[0];
+    return first ? scopeProjectRef(first.environmentId, first.id) : null;
+  }, [orderedProjects, scopedEnvironmentId]);
   const handleNewThread = useNewThreadHandler();
+  const scopedHandleNewThread = useCallback(
+    async (projectRef: ScopedProjectRef, options?: Parameters<typeof handleNewThread>[1]) => {
+      if (scopeEnvironmentId !== null) {
+        const environment = environments.find(
+          (candidate) => candidate.environmentId === scopeEnvironmentId,
+        );
+        if (
+          !canCreateThreadInSidebarDeviceScope({
+            scopeEnvironmentId,
+            projectEnvironmentIds: [projectRef.environmentId],
+            connectionPhase: environment?.connection.phase,
+          })
+        ) {
+          return null;
+        }
+      }
+      return handleNewThread(projectRef, options);
+    },
+    [environments, handleNewThread, scopeEnvironmentId],
+  );
+  const newThreadActionContext = useMemo(
+    () => ({
+      activeDraftThread,
+      activeThread: activeThread ?? undefined,
+      defaultProjectRef,
+      handleNewThread: scopedHandleNewThread,
+      ...(scopedEnvironmentId ? { scopeEnvironmentId: scopedEnvironmentId } : {}),
+    }),
+    [
+      activeDraftThread,
+      activeThread,
+      defaultProjectRef,
+      scopedHandleNewThread,
+      scopedEnvironmentId,
+    ],
+  );
 
   return {
     activeDraftThread,
     activeThread,
-    defaultProjectRef: orderedProjects[0]
-      ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)
-      : null,
-    handleNewThread,
+    defaultProjectRef,
+    handleNewThread: scopedHandleNewThread,
+    newThreadActionContext,
     routeDraftId,
     routeThreadRef,
   };

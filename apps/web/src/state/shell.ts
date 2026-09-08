@@ -82,3 +82,43 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
     shellStateValueAtom: environmentShell.stateValueAtom,
     requiresPrimaryEnvironment: !isHostedStaticApp(),
   });
+
+function shellStatesEqual(
+  left: ReadonlyMap<EnvironmentId, EnvironmentShellState>,
+  right: ReadonlyMap<EnvironmentId, EnvironmentShellState>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [environmentId, state] of left) {
+    const other = right.get(environmentId);
+    if (
+      other === undefined ||
+      other.status !== state.status ||
+      other.snapshot !== state.snapshot ||
+      other.error !== state.error
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const EMPTY_ENVIRONMENT_SHELL_STATES: ReadonlyMap<EnvironmentId, EnvironmentShellState> = new Map();
+
+/** One map of every catalog environment's shell state, so aggregate UI (the
+    sidebar device grid) can read cached/live status and snapshot freshness
+    without one hook per environment. Values are stabilized: shell writes
+    replace state objects constantly, but unchanged entries keep identity. */
+let previousEnvironmentShellStates: ReadonlyMap<EnvironmentId, EnvironmentShellState> =
+  EMPTY_ENVIRONMENT_SHELL_STATES;
+export const environmentShellStatesAtom = Atom.make((get) => {
+  const catalog = get(environmentCatalog.catalogValueAtom);
+  const next = new Map<EnvironmentId, EnvironmentShellState>();
+  for (const environmentId of catalog.entries.keys()) {
+    next.set(environmentId, get(environmentShell.stateValueAtom(environmentId)));
+  }
+  if (shellStatesEqual(previousEnvironmentShellStates, next)) {
+    return previousEnvironmentShellStates;
+  }
+  previousEnvironmentShellStates = next;
+  return previousEnvironmentShellStates;
+}).pipe(Atom.withLabel("web-environment-shell-states"));

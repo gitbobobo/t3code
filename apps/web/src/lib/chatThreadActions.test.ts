@@ -16,6 +16,7 @@ import {
 } from "./chatThreadActions";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const OTHER_ENVIRONMENT_ID = EnvironmentId.make("environment-2");
 const PROJECT_ID = ProjectId.make("project-1");
 const FALLBACK_PROJECT_ID = ProjectId.make("project-2");
 const PROJECT_DEFAULT_SELECTION: ModelSelection = {
@@ -168,4 +169,70 @@ describe("chatThreadActions", () => {
     expect(didStart).toBe(false);
     expect(handleNewThread).not.toHaveBeenCalled();
   });
+
+  it("skips an active thread outside the scoped environment and uses the default", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: OTHER_ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopeEnvironmentId: ENVIRONMENT_ID,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID));
+  });
+
+  it("skips an active draft outside the scoped environment and uses the default", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeDraftThread: {
+          environmentId: OTHER_ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopeEnvironmentId: ENVIRONMENT_ID,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID));
+  });
+
+  it("keeps the active thread when it serves the scoped environment", () => {
+    const projectRef = resolveThreadActionProjectRef(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopeEnvironmentId: ENVIRONMENT_ID,
+      }),
+    );
+
+    expect(projectRef).toEqual(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID));
+  });
+
+  it("carries the scope through start so an out-of-scope active thread cannot win", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    await startNewThreadFromContext(
+      createContext({
+        activeThread: {
+          environmentId: OTHER_ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+        },
+        scopeEnvironmentId: ENVIRONMENT_ID,
+        handleNewThread,
+      }),
+    );
+
+    expect(handleNewThread).toHaveBeenCalledWith(
+      scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID),
+    );
+  });
+});
+
+it("reports a rejected draft creation as unsuccessful", async () => {
+  const handleNewThread = vi.fn(async () => null);
+  expect(await startNewThreadFromContext(createContext({ handleNewThread }))).toBe(false);
 });
