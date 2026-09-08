@@ -74,6 +74,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useSidebarDeviceScope } from "../hooks/useSidebarDeviceScope";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
@@ -725,7 +726,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+  const { activeDraftThread, activeThread, handleNewThread, newThreadActionContext } =
     useHandleNewThread();
   const projects = useProjects();
   const referenceThreadRef =
@@ -775,6 +776,7 @@ function OpenCommandPaletteDialog(props: {
     }
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const { scopeEnvironmentId: deviceScopeId } = useSidebarDeviceScope();
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
@@ -926,14 +928,8 @@ function OpenCommandPaletteDialog(props: {
     [clientSettings.sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
   const contextualProjectRef = useMemo(
-    () =>
-      resolveThreadActionProjectRef({
-        activeDraftThread,
-        activeThread: activeThread ?? undefined,
-        defaultProjectRef,
-        handleNewThread,
-      }),
-    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
+    () => resolveThreadActionProjectRef(newThreadActionContext),
+    [newThreadActionContext],
   );
   const projectPickerEntries = useMemo(
     () =>
@@ -1266,11 +1262,22 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
+  // "New thread in..." honors the sidebar device filter: with one active, its
+  // picker offers only projects that live on the filtered environment. A key
+  // whose environment left the catalog is dormant, not filtering.
+  const newThreadPickerProjects = useMemo(
+    () =>
+      deviceScopeId === null
+        ? pickerProjects
+        : pickerProjects.filter((project) => project.environmentId === deviceScopeId),
+    [deviceScopeId, pickerProjects],
+  );
+
   const projectThreadItems = useMemo(
     () =>
       enumerateCommandPaletteItems(
         buildProjectActionItems({
-          projects: pickerProjects,
+          projects: newThreadPickerProjects,
           valuePrefix: "new-thread-in",
           searchTerms: (project) => {
             const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
@@ -1325,7 +1332,7 @@ function OpenCommandPaletteDialog(props: {
     [
       contextualProjectRef,
       handleNewThread,
-      pickerProjects,
+      newThreadPickerProjects,
       projectEnvironmentLocationById,
       projectGroupByTargetKey,
     ],
@@ -1764,12 +1771,7 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.new",
         run: async () => {
-          await startNewThreadFromContext({
-            activeDraftThread,
-            activeThread: activeThread ?? undefined,
-            defaultProjectRef,
-            handleNewThread,
-          });
+          await startNewThreadFromContext(newThreadActionContext);
         },
       });
     }

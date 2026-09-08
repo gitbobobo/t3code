@@ -105,6 +105,79 @@ beforeEach(() => vi.stubGlobal("HTMLElement", TestRow));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("sidebar list motion", () => {
+  it("does not animate delayed row sizing after an environment switch", () => {
+    const old = new TestRow("old environment");
+    const a = new TestRow("new a", 96);
+    const b = new TestRow("new b", 96);
+    const { motion, layout } = fixture([old]);
+    motion.update(true, "old");
+    layout([a, b]);
+    motion.update(true, "new");
+    // content-visibility initially measures the intrinsic placeholder height;
+    // the next projection sees real row content without a list edit.
+    a.offsetHeight = 140;
+    layout([a, b]);
+    motion.update(true, "new");
+    expect(a.animations).toHaveLength(0);
+    expect(b.animations).toHaveLength(0);
+
+    layout([b, a]);
+    motion.update(true, "new");
+    expectMove(b, 141);
+    expectMove(a, -97);
+  });
+
+  it("does not replay or cancel an in-flight move on a sizing-only update", () => {
+    const a = new TestRow("a");
+    const b = new TestRow("b");
+    const { motion, layout } = fixture([a, b]);
+    motion.update(true);
+    layout([b, a]);
+    motion.update(true);
+    const animation = a.animations[0]!;
+    b.offsetHeight += 20;
+    layout([b, a]);
+    motion.update(true);
+    expect(a.animations).toHaveLength(1);
+    expect(animation.cancel).not.toHaveBeenCalled();
+  });
+
+  it("replaces a filtered view without exit fades and animates later thread moves", () => {
+    const [a, b, c] = [new TestRow("a"), new TestRow("b"), new TestRow("c")];
+    const { motion, layout } = fixture([a, b, c]);
+    motion.update(true, "all");
+    layout([b, c]);
+    motion.update(true, "environment-b");
+    expect(a.clones).toHaveLength(0);
+    expect(b.animations).toHaveLength(0);
+    expect(c.animations).toHaveLength(0);
+
+    layout([c, b]);
+    motion.update(true, "environment-b");
+    expectMove(c, 83);
+    expectMove(b, -83);
+  });
+
+  it("cancels unfinished exit fades when switching scope, including a follow-up project reset", () => {
+    const [a, b, c] = [new TestRow("a"), new TestRow("b"), new TestRow("c")];
+    const { motion, layout, parent } = fixture([a, b]);
+    motion.update(true, "environment-a/project-a");
+    layout([b]);
+    motion.update(true, "environment-a/project-a");
+    const clone = a.clones[0]!;
+    expect(parent.children.includes(clone)).toBe(true);
+
+    layout([]);
+    motion.update(false, "environment-b/project-a");
+    expect(clone.animations[0]!.cancel).toHaveBeenCalledOnce();
+    expect(parent.children.includes(clone)).toBe(false);
+    expect(b.clones).toHaveLength(0);
+
+    layout([c]);
+    motion.update(true, "environment-b/all-projects");
+    expect(c.animations).toHaveLength(0);
+  });
+
   it("moves a retained Active row into Settled with its displaced peers", () => {
     const pinnedHeader = new TestRow("Pinned", 0);
     const pinned = new TestRow("pin");

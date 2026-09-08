@@ -35,6 +35,11 @@ export interface ChatThreadActionContext {
   readonly activeThread: ThreadContextLike | undefined;
   readonly defaultProjectRef: ScopedProjectRef | null;
   readonly handleNewThread: NewThreadHandler;
+  /** When set, the resolved project must live on this environment: an active
+      thread or draft elsewhere is ignored so a sidebar device filter never
+      spawns a draft that filter would have to hide. `defaultProjectRef` must
+      already respect the same scope. */
+  readonly scopeEnvironmentId?: EnvironmentId;
 }
 
 export function resolveNewDraftStartFromOrigin(input: {
@@ -71,10 +76,13 @@ export function hasExplicitComposerModelSelection(
 export function resolveThreadActionProjectRef(
   context: ChatThreadActionContext,
 ): ScopedProjectRef | null {
-  if (context.activeThread) {
+  const scopeEnvironmentId = context.scopeEnvironmentId ?? null;
+  const inScope = (threadContext: ThreadContextLike): boolean =>
+    scopeEnvironmentId === null || threadContext.environmentId === scopeEnvironmentId;
+  if (context.activeThread && inScope(context.activeThread)) {
     return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
   }
-  if (context.activeDraftThread) {
+  if (context.activeDraftThread && inScope(context.activeDraftThread)) {
     return scopeProjectRef(
       context.activeDraftThread.environmentId,
       context.activeDraftThread.projectId,
@@ -97,6 +105,6 @@ export async function startNewThreadFromContext(
     return false;
   }
 
-  await context.handleNewThread(projectRef);
-  return true;
+  const result = await context.handleNewThread(projectRef);
+  return result !== null;
 }

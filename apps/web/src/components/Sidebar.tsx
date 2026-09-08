@@ -3,6 +3,7 @@ import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePull
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   DndContext,
@@ -124,13 +125,14 @@ import {
 } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useSidebarDeviceScope } from "../hooks/useSidebarDeviceScope";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
@@ -138,6 +140,7 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { environmentShellStatesAtom } from "../state/shell";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
@@ -193,6 +196,15 @@ import {
   type SidebarListMarker,
   type SidebarSection,
 } from "./Sidebar.logic";
+import {
+  canCreateThreadInSidebarDeviceScope,
+  countSidebarThreadsByDevice,
+  createEmptySidebarDeviceStatusCounts,
+  resolveAllDevicesCountsState,
+  resolveSidebarDeviceCountsState,
+  sidebarProjectGroupServesEnvironment,
+} from "./SidebarDeviceScope.logic";
+import { SidebarDeviceGrid, type SidebarDeviceCard } from "./SidebarDeviceGrid";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
@@ -258,7 +270,6 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
-
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
@@ -823,6 +834,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectByKey: ReadonlyMap<string, EnvironmentProject>;
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   scopedProjectKeys: ReadonlySet<string> | null;
+  scopedEnvironmentIds: ReadonlySet<string> | null;
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
@@ -868,6 +880,12 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       ) {
         continue;
       }
+      if (
+        props.scopedEnvironmentIds !== null &&
+        !props.scopedEnvironmentIds.has(session.environmentId)
+      ) {
+        continue;
+      }
       if (draftKey === props.routeDraftId) {
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
@@ -890,6 +908,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     draftsByThreadKey,
     frozenActive,
     props.routeDraftId,
+    props.scopedEnvironmentIds,
     props.scopedProjectKeys,
   ]);
   const handleDiscard = useCallback(
@@ -2261,7 +2280,7 @@ export default function Sidebar() {
     () => openCommandPalette({ open: "add-project" }),
     [],
   );
-  const { environments } = useEnvironments();
+  const { environments, scopeEnvironmentId: deviceScopeId } = useSidebarDeviceScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
@@ -2397,27 +2416,86 @@ export default function Sidebar() {
   // app restarts keep it.
   const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  const setDeviceScopeKey = useUiStateStore((store) => store.setSidebarDeviceScopeKey);
+  const shellStatesByEnvironment = useAtomValue(environmentShellStatesAtom);
+  const deviceScopeEnvironment = useMemo(
+    () => environments.find((environment) => environment.environmentId === deviceScopeId) ?? null,
+    [deviceScopeId, environments],
+  );
+  const projectGroupByScopeKey = useMemo(
+    () => new Map(projectGroups.map((project) => [project.projectKey, project] as const)),
+    [projectGroups],
+  );
+  const scopedProjectGroups = useMemo(
+    () =>
+      projectGroups.filter((project) =>
+        sidebarProjectGroupServesEnvironment(project.memberProjectRefs, deviceScopeId),
+      ),
+    [deviceScopeId, projectGroups],
+  );
+  useEffect(() => {
+    if (deviceScopeId === null || projectScopeKey === null) return;
+    const group = projectGroupByScopeKey.get(projectScopeKey);
+    if (group && !sidebarProjectGroupServesEnvironment(group.memberProjectRefs, deviceScopeId)) {
+      setProjectScopeKey(null);
+    }
+  }, [deviceScopeId, projectGroupByScopeKey, projectScopeKey, setProjectScopeKey]);
+  const deviceCards = useMemo<SidebarDeviceCard[]>(() => {
+    if (environments.length <= 1) return [];
+    const countsByEnvironment = countSidebarThreadsByDevice(threads);
+    const sorted = [...environments].sort((left, right) => {
+      const leftPrimary = left.environmentId === primaryEnvironmentId;
+      const rightPrimary = right.environmentId === primaryEnvironmentId;
+      if (leftPrimary !== rightPrimary) return leftPrimary ? -1 : 1;
+      return left.label.localeCompare(right.label);
+    });
+    const cards = sorted.map((environment): SidebarDeviceCard => {
+      const shellState = shellStatesByEnvironment.get(environment.environmentId);
+      const hasSnapshot = shellState !== undefined && Option.isSome(shellState.snapshot);
+      return {
+        key: environment.environmentId,
+        label: environment.label,
+        machine: resolveEnvironmentMachineKind(environment.serverConfig),
+        connectionPhase: environment.connection.phase,
+        countsState: resolveSidebarDeviceCountsState({
+          shellStatus: shellState?.status ?? "empty",
+          hasSnapshot,
+          counts: hasSnapshot
+            ? (countsByEnvironment.get(environment.environmentId) ??
+              createEmptySidebarDeviceStatusCounts())
+            : null,
+          snapshotUpdatedAt: hasSnapshot ? (shellState?.snapshot.value.updatedAt ?? null) : null,
+        }),
+      };
+    });
+    return [
+      {
+        key: null,
+        label: "All environments",
+        machine: null,
+        connectionPhase: null,
+        countsState: resolveAllDevicesCountsState(cards.map((card) => card.countsState)),
+      },
+      ...cards,
+    ];
+  }, [environments, primaryEnvironmentId, shellStatesByEnvironment, threads]);
   // {value, label} items let Base UI drive the combobox selection contract
   // while the popup search filters the same collection.
   const projectScopeItems = useMemo(
     () => [
       { value: "all", label: "All projects" },
-      ...projectGroups.map((project) => ({
+      ...scopedProjectGroups.map((project) => ({
         value: project.projectKey,
         label: project.displayName,
       })),
     ],
-    [projectGroups],
+    [scopedProjectGroups],
   );
   // Same-named projects on two machines are only told apart by where they
   // live, so rows on another machine carry its icon once the catalog spans
   // more than one environment; a single-machine catalog stays as it was.
   const showProjectEnvironments = useMemo(
     () => projectGroupsSpanEnvironments(projectGroups),
-    [projectGroups],
-  );
-  const projectGroupByScopeKey = useMemo(
-    () => new Map(projectGroups.map((project) => [project.projectKey, project] as const)),
     [projectGroups],
   );
   const selectedProjectScopeItem = useMemo(
@@ -2465,6 +2543,10 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  const scopedEnvironmentIds = useMemo(
+    () => (deviceScopeId === null ? null : new Set([deviceScopeId])),
+    [deviceScopeId],
+  );
   // A persisted scope whose project is gone falls back to all projects, but
   // only after every catalog environment has a live project snapshot. Cached
   // or disconnected environments cannot establish that the project is gone.
@@ -2496,6 +2578,9 @@ export default function Sidebar() {
       ) {
         continue;
       }
+      if (scopedEnvironmentIds !== null && !scopedEnvironmentIds.has(session.environmentId)) {
+        continue;
+      }
       count += 1;
     }
     return count;
@@ -2504,7 +2589,7 @@ export default function Sidebar() {
   // hidden now, and bulk actions must never count or touch invisible rows.
   useEffect(() => {
     clearSelection();
-  }, [clearSelection, projectScopeKey]);
+  }, [clearSelection, deviceScopeId, projectScopeKey]);
 
   const openProjectSettings = useCallback(
     (projectGroup: SidebarProjectSnapshot) => {
@@ -2573,6 +2658,7 @@ export default function Sidebar() {
     const visible = threads.filter(
       (thread) =>
         thread.archivedAt === null &&
+        (scopedEnvironmentIds === null || scopedEnvironmentIds.has(thread.environmentId)) &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
     );
@@ -2660,7 +2746,15 @@ export default function Sidebar() {
       settledThreads: sortSettledThreads(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    optimisticDrop,
+    scopedEnvironmentIds,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -2731,7 +2825,7 @@ export default function Sidebar() {
   // filter context changes so a scope/search flip never inherits a deep
   // page state.
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
-  const settledResetKey = projectScopeKey ?? "all";
+  const settledResetKey = `${deviceScopeId ?? "all"}:${projectScopeKey ?? "all"}`;
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
     lastSettledResetKeyRef.current = settledResetKey;
@@ -3438,6 +3532,7 @@ export default function Sidebar() {
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
   const listMotionPaused = dragState !== null;
+  const listMotionScopeKey = JSON.stringify([deviceScopeId, projectScopeKey]);
   // Every shell event rebuilds sidebarListItems, but rows only move when the
   // rendered order or a row's section changes. Keying the motion pass on that
   // keeps ordinary updates from forcing a layout read and animating rows
@@ -3456,12 +3551,13 @@ export default function Sidebar() {
     // Later thread actions can animate while writes settle.
     // Draft navigation can reveal a frozen row without changing the draft count.
     void sidebarListOrderKey;
-    listMotionRef.current?.update(!listMotionPaused && sidebarListHasRows);
+    listMotionRef.current?.update(!listMotionPaused && sidebarListHasRows, listMotionScopeKey);
   }, [
     listMotionPaused,
     routeDraftIdForRows,
     sidebarListHasRows,
     sidebarListOrderKey,
+    listMotionScopeKey,
     visibleDraftSessionCount,
   ]);
   const handleThreadDragOver = useCallback(
@@ -4403,26 +4499,26 @@ export default function Sidebar() {
   // New thread defaults to the project you're in (active thread's project,
   // falling back to the top project) — same resolution the command palette
   // uses. The command palette already offers a "New thread in..." submenu
-  // for multi-project setups.
+  // for multi-project setups. With a device filter active, both the project
+  // count and the context are device-scoped: the active thread only carries
+  // when it serves the filtered device, so the created draft can never land
+  // outside the list the user filtered.
+  const scopeProjectGroupCount =
+    deviceScopeId === null ? projectGroups.length : scopedProjectGroups.length;
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.
-      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, scopeProjectGroupCount)) {
         if (isMobile) setOpenMobile(false);
-        void startNewThreadFromContext({
-          activeDraftThread: newThreadContext.activeDraftThread,
-          activeThread: newThreadContext.activeThread ?? undefined,
-          defaultProjectRef: newThreadContext.defaultProjectRef,
-          handleNewThread: newThreadContext.handleNewThread,
-        });
+        void startNewThreadFromContext(newThreadContext.newThreadActionContext);
         return;
       }
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [isMobile, newThreadContext.newThreadActionContext, scopeProjectGroupCount, setOpenMobile],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -4435,8 +4531,19 @@ export default function Sidebar() {
   // shift+click and its keyboard twin chat.newLocal for direct create.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    (scopeProjectGroupCount <= 1
+      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+      : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  // An offline (or project-less) device cannot receive new threads: creating
+  // would mint a draft the device can never promote.
+  const canCreateThreadInScope =
+    projects.length > 0 &&
+    canCreateThreadInSidebarDeviceScope({
+      scopeEnvironmentId: deviceScopeId,
+      projectEnvironmentIds: projects.map((project) => project.environmentId),
+      connectionPhase: deviceScopeEnvironment?.connection.phase,
+    });
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -4446,6 +4553,13 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
+            {deviceCards.length > 0 ? (
+              <SidebarDeviceGrid
+                cards={deviceCards}
+                selectedKey={deviceScopeId}
+                onSelect={setDeviceScopeKey}
+              />
+            ) : null}
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
@@ -4583,10 +4697,10 @@ export default function Sidebar() {
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={!canCreateThreadInScope}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
-              showNewThreadInProjectHint={projectGroups.length > 1}
+              showNewThreadInProjectHint={scopeProjectGroupCount > 1}
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
               onSearchQueryChange={(value) => {
@@ -4840,6 +4954,7 @@ export default function Sidebar() {
                           projectByKey={projectByKey}
                           projectDisplayNameByKey={projectDisplayNameByKey}
                           scopedProjectKeys={scopedProjectKeys}
+                          scopedEnvironmentIds={scopedEnvironmentIds}
                           routeDraftId={routeDraftIdForRows}
                           onNavigateToDraft={navigateToDraft}
                         />,
@@ -4989,6 +5104,8 @@ export default function Sidebar() {
                 </>
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`
+              ) : deviceScopeEnvironment ? (
+                `No threads on ${deviceScopeEnvironment.label} yet`
               ) : (
                 "No threads yet"
               )}

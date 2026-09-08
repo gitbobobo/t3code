@@ -23,6 +23,7 @@ function progress(animation: Animation) {
 export function createSidebarListMotion(parent: HTMLUListElement) {
   let positions: Map<HTMLElement, RowPosition> | null = null;
   let disposed = false;
+  let previousScopeKey = "";
   const reducedMotion = parent.ownerDocument.defaultView?.matchMedia(
     "(prefers-reduced-motion: reduce)",
   );
@@ -130,8 +131,14 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
   };
 
   return {
-    update(animate: boolean) {
+    update(animate: boolean, scopeKey = "") {
       if (disposed) return;
+      // Filtering replaces the view; it is not a thread move. Discard old
+      // positions and unfinished exit clones before measuring the new scope.
+      if (scopeKey !== previousScopeKey) {
+        suspend();
+        previousScopeKey = scopeKey;
+      }
       const next = new Map(
         Array.from(parent.children)
           .filter((node): node is HTMLElement => node instanceof HTMLElement && !exiting.has(node))
@@ -201,7 +208,12 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       for (const node of running.keys()) {
         if (!shouldAnimate || !next.has(node)) cancel(node);
       }
-      if (shouldAnimate) {
+      const rowsChanged =
+        oldOrder.length !== nextOrder.length ||
+        nextOrder.some((node, index) => node !== oldOrder[index]);
+      // Lazy row layout and live badges can change heights without a list
+      // edit. Refresh measurements without replaying an existing move.
+      if (shouldAnimate && rowsChanged) {
         for (const [index, node] of nextOrder.entries()) {
           const position = next.get(node)!;
           const previousTop = positions!.get(node)?.top;

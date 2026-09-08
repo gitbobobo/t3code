@@ -13,6 +13,7 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useSidebarDeviceScope } from "../hooks/useSidebarDeviceScope";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -30,13 +31,13 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
-    useHandleNewThread();
+  const { newThreadActionContext, routeThreadRef } = useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scopeEnvironmentId: deviceScopeId } = useSidebarDeviceScope();
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
@@ -44,8 +45,12 @@ function ChatRouteGlobalShortcuts() {
         settings: projectGroupingSettings,
         primaryEnvironmentId,
         resolveEnvironmentLabel: () => null,
-      }).length,
-    [primaryEnvironmentId, projectGroupingSettings, projects],
+      }).filter(
+        (group) =>
+          deviceScopeId === null ||
+          group.memberProjectRefs.some((projectRef) => projectRef.environmentId === deviceScopeId),
+      ).length,
+    [deviceScopeId, primaryEnvironmentId, projectGroupingSettings, projects],
   );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -96,12 +101,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.newLocal") {
         event.preventDefault();
         event.stopPropagation();
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        void startNewThreadFromContext(newThreadActionContext);
         return;
       }
 
@@ -115,12 +115,7 @@ function ChatRouteGlobalShortcuts() {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
-        void startNewThreadFromContext({
-          activeDraftThread,
-          activeThread: activeThread ?? undefined,
-          defaultProjectRef,
-          handleNewThread,
-        });
+        void startNewThreadFromContext(newThreadActionContext);
         return;
       }
 
@@ -173,12 +168,9 @@ function ChatRouteGlobalShortcuts() {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [
-    activeDraftThread,
-    activeThread,
     clearSelection,
-    handleNewThread,
     keybindings,
-    defaultProjectRef,
+    newThreadActionContext,
     previewOpen,
     projectGroupCount,
     routeThreadRef,

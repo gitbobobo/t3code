@@ -811,7 +811,7 @@ export function shouldRecedeSidebarThread(input: {
   return false;
 }
 
-type SidebarThreadStatusInput = Pick<
+export type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
   "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
 >;
