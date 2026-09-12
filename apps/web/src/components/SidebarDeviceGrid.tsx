@@ -1,6 +1,6 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentMachineKind } from "@t3tools/contracts";
-import { ClockIcon, MonitorSmartphoneIcon } from "lucide-react";
+import { CheckCircle2, ClockIcon, MonitorSmartphoneIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -118,7 +118,9 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
   const summary = chips
     .map(({ status, count }) => `${count} ${DEVICE_STATUS_LABELS[status]}`)
     .join(", ");
-  if (chips.length === 0) {
+  const completedSummary =
+    countsState.counts.completed > 0 ? `${countsState.counts.completed} completed` : null;
+  if (chips.length === 0 && completedSummary === null) {
     return {
       row: (
         <span className="text-[10px] text-sidebar-muted-foreground/60">
@@ -151,9 +153,18 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
             {count}
           </span>
         ))}
+        {completedSummary !== null ? (
+          <span className="flex items-center gap-0.5 font-mono text-[10px] leading-none tabular-nums text-sidebar-muted-foreground">
+            <CheckCircle2 aria-hidden className="size-2.5 text-emerald-500" />
+            {countsState.counts.completed}
+          </span>
+        ) : null}
       </span>
     ),
-    tooltip: statePrefix === null ? summary : `${statePrefix} · ${summary}`,
+    tooltip:
+      statePrefix === null
+        ? [summary, completedSummary].filter(Boolean).join(", ")
+        : `${statePrefix} · ${[summary, completedSummary].filter(Boolean).join(", ")}`,
   };
 }
 
@@ -211,7 +222,9 @@ export function SidebarDeviceGrid(props: {
                       <span className="min-w-0 flex-1 truncate text-xs leading-none font-medium">
                         {card.label}
                       </span>
-                      {card.connectionPhase ? (
+                      {card.connectionPhase &&
+                      card.connectionPhase !== "connected" &&
+                      card.connectionPhase !== "available" ? (
                         <span
                           aria-hidden
                           className={cn(

@@ -1,7 +1,9 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { SidebarThreadSummary } from "../types";
 
 import {
+  hasUnseenCompletion,
   resolveSidebarThreadStatus,
   type SidebarThreadStatus,
   type SidebarThreadStatusInput,
@@ -9,7 +11,9 @@ import {
 
 export type { SidebarThreadStatus } from "./Sidebar.logic";
 
-export type SidebarDeviceStatusCounts = Readonly<Record<SidebarThreadStatus, number>>;
+export type SidebarDeviceStatusCounts = Readonly<Record<SidebarThreadStatus, number>> & {
+  readonly completed: number;
+};
 
 /** Resolve the only device scope that the new sidebar is allowed to expose.
  * Persisted keys may outlive an environment, and the legacy sidebar shares
@@ -43,23 +47,42 @@ export function canCreateThreadInSidebarDeviceScope(input: {
 }
 
 export function createEmptySidebarDeviceStatusCounts(): SidebarDeviceStatusCounts {
-  return { approval: 0, input: 0, working: 0, monitoring: 0, failed: 0, ready: 0 };
+  return { approval: 0, input: 0, working: 0, monitoring: 0, failed: 0, ready: 0, completed: 0 };
 }
 
 export function countSidebarThreadsByDevice<
-  TThread extends SidebarThreadStatusInput & {
-    readonly environmentId: string;
-    readonly archivedAt: string | null;
-    readonly settledOverride: SidebarThreadSummary["settledOverride"];
-  },
->(threads: readonly TThread[]): ReadonlyMap<string, SidebarDeviceStatusCounts> {
+  TThread extends SidebarThreadStatusInput &
+    Pick<
+      SidebarThreadSummary,
+      | "id"
+      | "environmentId"
+      | "archivedAt"
+      | "settledOverride"
+      | "latestTurn"
+      | "hasActionableProposedPlan"
+      | "interactionMode"
+    >,
+>(
+  threads: readonly TThread[],
+  lastVisitedAtByThreadKey?: Readonly<Record<string, string>>,
+): ReadonlyMap<string, SidebarDeviceStatusCounts> {
   const countsByEnvironment = new Map<string, SidebarDeviceStatusCounts>();
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.settledOverride === "settled") continue;
-    const counts: Record<SidebarThreadStatus, number> = {
+    const counts = {
       ...(countsByEnvironment.get(thread.environmentId) ?? createEmptySidebarDeviceStatusCounts()),
     };
-    counts[resolveSidebarThreadStatus(thread)] += 1;
+    const status = resolveSidebarThreadStatus(thread);
+    const lastVisitedAt =
+      lastVisitedAtByThreadKey?.[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+    // The row shows the green Done pill for exactly this case: a quiet thread
+    // whose latest completion landed after the user's last visit.
+    const isDone = status === "ready" && hasUnseenCompletion({ ...thread, lastVisitedAt });
+    if (isDone) {
+      counts.completed += 1;
+    } else {
+      counts[status] += 1;
+    }
     countsByEnvironment.set(thread.environmentId, counts);
   }
   return countsByEnvironment;
@@ -113,9 +136,9 @@ export function resolveSidebarDeviceCountsState(input: {
 export function sumSidebarStatusCounts(
   countsList: readonly SidebarDeviceStatusCounts[],
 ): SidebarDeviceStatusCounts {
-  const total: Record<SidebarThreadStatus, number> = createEmptySidebarDeviceStatusCounts();
+  const total = { ...createEmptySidebarDeviceStatusCounts() };
   for (const counts of countsList) {
-    for (const status of Object.keys(counts) as SidebarThreadStatus[]) {
+    for (const status of Object.keys(counts) as (SidebarThreadStatus | "completed")[]) {
       total[status] += counts[status];
     }
   }
