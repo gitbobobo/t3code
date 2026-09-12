@@ -2440,16 +2440,24 @@ export default function Sidebar() {
       setProjectScopeKey(null);
     }
   }, [deviceScopeId, projectGroupByScopeKey, projectScopeKey, setProjectScopeKey]);
+  // Device cards count non-archived, unsettled thread shells per environment — the
+  // aggregate already carries cached (disconnected) environments — so the
+  // grid is unaffected by this list's project scope or search, and its
+  // resolver is the same one the rows use, including Done: a quiet thread with
+  // an unseen completion tallies as completed, mirroring the row pill. "All
+  // environments" rolls the cards up with an explicit trust hint when any
+  // contribution is cached or missing.
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const deviceCards = useMemo<SidebarDeviceCard[]>(() => {
     if (environments.length <= 1) return [];
-    const countsByEnvironment = countSidebarThreadsByDevice(threads);
-    const sorted = [...environments].sort((left, right) => {
+    const countsByEnvironment = countSidebarThreadsByDevice(threads, threadLastVisitedAtById);
+    const primaryFirst = [...environments].sort((left, right) => {
       const leftPrimary = left.environmentId === primaryEnvironmentId;
       const rightPrimary = right.environmentId === primaryEnvironmentId;
       if (leftPrimary !== rightPrimary) return leftPrimary ? -1 : 1;
       return left.label.localeCompare(right.label);
     });
-    const cards = sorted.map((environment): SidebarDeviceCard => {
+    const cards = primaryFirst.map((environment): SidebarDeviceCard => {
       const shellState = shellStatesByEnvironment.get(environment.environmentId);
       const hasSnapshot = shellState !== undefined && Option.isSome(shellState.snapshot);
       return {
@@ -2478,7 +2486,13 @@ export default function Sidebar() {
       },
       ...cards,
     ];
-  }, [environments, primaryEnvironmentId, shellStatesByEnvironment, threads]);
+  }, [
+    environments,
+    primaryEnvironmentId,
+    shellStatesByEnvironment,
+    threads,
+    threadLastVisitedAtById,
+  ]);
   // {value, label} items let Base UI drive the combobox selection contract
   // while the popup search filters the same collection.
   const projectScopeItems = useMemo(

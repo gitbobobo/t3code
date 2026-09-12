@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
-import { DEFAULT_RUNTIME_MODE } from "../types";
+import { EnvironmentId, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { DEFAULT_RUNTIME_MODE, type SidebarThreadSummary } from "../types";
 import {
   canCreateThreadInSidebarDeviceScope,
   countSidebarThreadsByDevice,
@@ -103,17 +104,31 @@ describe("countSidebarThreadsByDevice", () => {
     hasPendingApprovals?: boolean;
     hasPendingUserInput?: boolean;
   }) => ({
+    id: ThreadId.make("thread-1"),
     ...idle,
+    latestTurn: null as SidebarThreadSummary["latestTurn"],
+    hasActionableProposedPlan: false,
+    interactionMode: "default" as const,
     session:
       overrides.status === undefined
         ? null
         : { ...runningSession, status: overrides.status, threadId: ThreadId.make("thread-1") },
     hasPendingApprovals: overrides.hasPendingApprovals ?? false,
     hasPendingUserInput: overrides.hasPendingUserInput ?? false,
-    environmentId: overrides.environmentId,
+    environmentId: overrides.environmentId as SidebarThreadSummary["environmentId"],
     archivedAt: overrides.archivedAt ?? null,
     settledOverride: overrides.settledOverride ?? null,
   });
+  const doneTurn: SidebarThreadSummary["latestTurn"] = {
+    turnId: TurnId.make("turn-1"),
+    state: "completed",
+    requestedAt: "2026-03-09T09:59:00.000Z",
+    startedAt: "2026-03-09T09:59:30.000Z",
+    completedAt: "2026-03-09T10:00:00.000Z",
+    assistantMessageId: null,
+  };
+  const visitKey = (environmentId: string) =>
+    scopedThreadKey(scopeThreadRef(EnvironmentId.make(environmentId), ThreadId.make("thread-1")));
 
   it("tallies each device's threads into the row resolver's statuses", () => {
     const counts = countSidebarThreadsByDevice([
@@ -130,6 +145,7 @@ describe("countSidebarThreadsByDevice", () => {
       monitoring: 0,
       failed: 0,
       ready: 1,
+      completed: 0,
     });
     expect(counts.get("env-b")?.failed).toBe(1);
   });
@@ -178,6 +194,35 @@ describe("countSidebarThreadsByDevice", () => {
     expect(
       countSidebarThreadsByDevice([{ ...settled, settledOverride: "active" }]).get("env-a")?.ready,
     ).toBe(1);
+  });
+
+  it("tallies unseen completions as done instead of ready", () => {
+    const doneThread = { ...thread({ environmentId: "env-a" }), latestTurn: doneTurn };
+
+    const unseen = countSidebarThreadsByDevice([doneThread], {
+      [visitKey("env-a")]: "2026-03-09T09:00:00.000Z",
+    });
+    expect(unseen.get("env-a")?.completed).toBe(1);
+    expect(unseen.get("env-a")?.ready).toBe(0);
+
+    // Visiting past the completion returns the thread to quiet ready.
+    const seen = countSidebarThreadsByDevice([doneThread], {
+      [visitKey("env-a")]: "2026-03-09T11:00:00.000Z",
+    });
+    expect(seen.get("env-a")?.completed).toBe(0);
+    expect(seen.get("env-a")?.ready).toBe(1);
+  });
+
+  it("keeps an unseen completion of an action-required thread out of done", () => {
+    const approvalThread = {
+      ...thread({ environmentId: "env-a", hasPendingApprovals: true }),
+      latestTurn: doneTurn,
+    };
+    const counts = countSidebarThreadsByDevice([approvalThread], {
+      [visitKey("env-a")]: "2026-03-09T09:00:00.000Z",
+    });
+    expect(counts.get("env-a")?.approval).toBe(1);
+    expect(counts.get("env-a")?.completed).toBe(0);
   });
 
   it("returns an empty tally when there is nothing to count", () => {
@@ -253,6 +298,7 @@ describe("resolveAllDevicesCountsState", () => {
     monitoring: 0,
     failed: 0,
     ready: 0,
+    completed: 0,
     ...overrides,
   });
 
