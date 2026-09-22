@@ -208,12 +208,13 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       for (const node of running.keys()) {
         if (!shouldAnimate || !next.has(node)) cancel(node);
       }
+      // Lazy row layout and live badges can change heights without a list
+      // edit; refresh the measurements without replaying moves. Entries in
+      // flight still retarget: a shelf opening above shifts them mid-entrance.
       const rowsChanged =
         oldOrder.length !== nextOrder.length ||
         nextOrder.some((node, index) => node !== oldOrder[index]);
-      // Lazy row layout and live badges can change heights without a list
-      // edit. Refresh measurements without replaying an existing move.
-      if (shouldAnimate && rowsChanged) {
+      if (shouldAnimate && (rowsChanged || entering.size > 0)) {
         for (const [index, node] of nextOrder.entries()) {
           const position = next.get(node)!;
           const previousTop = positions!.get(node)?.top;
