@@ -42,6 +42,11 @@ Opening a provider session can start MCP servers, run hooks, or launch a login b
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
+Devin's ACP `authenticate` always starts a browser PKCE login, even with stored credentials, so
+T3 never sends it. [Devin probes](../../apps/server/src/provider/Layers/DevinProvider.ts) read
+sign-in state from `devin auth status` and only open the model-discovery session when signed in,
+deleting it afterwards.
+
 [Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
 T3 auth session. The client carries the return URL back to the environment because the provider's
 loopback listener may be on another machine. Forward only the callback for the owned pending flow;
