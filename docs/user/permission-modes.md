@@ -27,6 +27,12 @@ including OpenCode and Antigravity, fall back to asking.
 For Grok, **Always allow this session** remembers the matching command or tool input. Other
 actions still require approval.
 
+Devin has no always-ask mode over ACP, so **Supervised** behaves like **Auto-accept edits**:
+workspace edits auto-approve while commands still ask. **Auto** uses Devin's Smart mode and
+falls back to asking where Smart is not available. **Always allow this session** applies only
+to that Devin session; the persistent allow options Devin offers are never selected
+automatically.
+
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.
 

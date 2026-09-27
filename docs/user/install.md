@@ -58,12 +58,17 @@ update it with `git pull` and a rebuild.
 Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
 or use a package manager:
 
-| Platform           | Install                         |
-| ------------------ | ------------------------------- |
-| Windows            | `winget install T3Tools.T3Code` |
-| macOS              | `brew install --cask t3-code`   |
-| Arch Linux         | `yay -S t3code-bin`             |
-| Arch Linux nightly | `yay -S t3code-nightly-bin`     |
+| Platform           | Install                            |
+| ------------------ | ---------------------------------- |
+| Windows            | `winget install T3Tools.T3Code`    |
+| macOS              | `brew install --cask t3-code`      |
+| Debian, Ubuntu     | `sudo apt install ./T3-Code-*.deb` |
+| Arch Linux         | `yay -S t3code-bin`                |
+| Arch Linux nightly | `yay -S t3code-nightly-bin`        |
+
+The `.deb` updates itself like the other desktop builds. It asks for your
+password to install each update. If your desktop has no password prompt, the
+update fails. Download the new `.deb` and install it the same way.
 
 ### Windows Subsystem for Linux
 
@@ -112,6 +117,7 @@ computer.
 | Claude      | Install [Claude Code](https://claude.com/product/claude-code), then run `claude auth login`. |
 | Cursor      | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                        |
 | Grok Build  | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                           |
+| Devin       | Install [Devin CLI](https://docs.devin.ai/cli), then run `devin auth login`.                 |
 | OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                     |
 | Antigravity | Install and sign in with Google from T3 Code's provider settings.                            |
 
@@ -119,6 +125,14 @@ Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set it
 **Binary path** in provider settings, especially when using a version manager.
 Cursor's executable is `cursor-agent`, although its login command is
 `agent login`. Antigravity can use its managed runtime without a `PATH` entry.
+Devin's model list loads after sign-in and can take a moment; until it resolves,
+the picker shows a fallback entry.
+
+T3 Code warns when a provider version has known compatibility problems with your
+release. Check **Settings → Providers** on that environment for the recommended
+version or range. When its package manager supports installing a specific version,
+you can install the recommendation there. Otherwise use the provider's installer
+on the environment's machine. An unlisted version is unverified.
 
 When a provider CLI is behind its latest release, its provider card shows the
 available version. **Update now** appears only when T3 Code can tell which

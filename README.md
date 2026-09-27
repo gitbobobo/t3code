@@ -13,12 +13,13 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
+> T3 Code currently supports Codex, Claude, Cursor, Grok Build, Devin, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
 > - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
 > - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+> - Devin: install [Devin CLI](https://docs.devin.ai/cli) and run `devin auth login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 > - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
@@ -52,6 +53,14 @@ winget install T3Tools.T3Code
 
 ```bash
 brew install --cask t3-code
+```
+
+#### Debian, Ubuntu (`.deb`)
+
+Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
+
+```bash
+sudo apt install ./T3-Code-*.deb
 ```
 
 #### Arch Linux (AUR)

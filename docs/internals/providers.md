@@ -42,6 +42,11 @@ Opening a provider session can start MCP servers, run hooks, or launch a login b
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
+Devin's ACP `authenticate` always starts a browser PKCE login, even with stored credentials, so
+T3 never sends it. [Devin probes](../../apps/server/src/provider/Layers/DevinProvider.ts) read
+sign-in state from `devin auth status` and only open the model-discovery session when signed in,
+deleting it afterwards.
+
 [Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
 T3 auth session. The client carries the return URL back to the environment because the provider's
 loopback listener may be on another machine. Forward only the callback for the owned pending flow;
@@ -64,7 +69,9 @@ it. Homebrew and npm are proven by the real path (symlinks followed): a versione
 `brew --prefix`, or `<prefix>/lib/node_modules/<pkg>/` (Windows: the shim beside `node_modules`).
 Native installer layouts and the global bin directories of pnpm, Bun, and Vite+ may match on either
 the resolved path or its real target, since those installers place real files or their own symlinks
-there. Anything unproven stays manual-only but still reports the version gap. npm updates pin
+there. Cursor and Grok are the exception: their only updater is the CLI itself, which detects its
+own installer, so any resolved executable runs `<binary> update`. Anything unproven stays
+manual-only but still reports the version gap. npm updates pin
 `--prefix` because the `npm` on `PATH` can belong to a different Node than the one that owns the
 provider. Homebrew
 compares against `brew info` since casks trail npm by hours; native installs share npm's version
