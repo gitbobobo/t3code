@@ -15,6 +15,8 @@ import type * as AcpSchema from "effect-acp/schema";
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
 const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";
+const devinProfile = process.env.T3_ACP_DEVIN === "1";
+const emitDevinPlan = process.env.T3_ACP_EMIT_DEVIN_PLAN === "1";
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
@@ -71,8 +73,12 @@ const permissionRequestCount = Math.max(
 );
 const sessionId = "mock-session-1";
 
-let currentModeId = antigravityProfile ? "default" : "ask";
-let currentModelId = antigravityProfile ? "gemini-test-low" : "default";
+let currentModeId = antigravityProfile ? "default" : devinProfile ? "accept-edits" : "ask";
+let currentModelId = antigravityProfile
+  ? "gemini-test-low"
+  : devinProfile
+    ? "swe-1-7-lightning-medium"
+    : "default";
 let parameterizedModelPicker = false;
 let currentReasoning = "medium";
 let currentContext = "272k";
@@ -118,6 +124,68 @@ process.once("exit", (code) => {
 });
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  if (devinProfile) {
+    const baseOptions: Array<AcpSchema.SessionConfigOption> = [
+      {
+        id: "mode",
+        name: "Session Mode",
+        category: "mode",
+        type: "select",
+        currentValue: currentModeId,
+        options: [
+          { value: "accept-edits", name: "Code" },
+          { value: "smart", name: "Smart" },
+          { value: "ask", name: "Ask" },
+          { value: "plan", name: "Plan" },
+          { value: "bypass", name: "Bypass Permissions" },
+        ],
+      },
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: currentModelId,
+        options: [
+          { value: "adaptive", name: "Adaptive" },
+          { value: "swe-1-7-lightning-medium", name: "SWE-1.7 Lightning" },
+        ],
+      },
+    ];
+    // Like the real CLI, per-model options appear only for models that have
+    // them: Lightning advertises thought levels and speed, Adaptive neither.
+    if (currentModelId === "swe-1-7-lightning-medium") {
+      return [
+        ...baseOptions,
+        {
+          id: "thought_level",
+          name: "Thought Level",
+          category: "thought_level",
+          type: "select",
+          currentValue: currentReasoning,
+          options: [
+            { value: "low", name: "Low" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+            { value: "xhigh", name: "XHigh" },
+            { value: "max", name: "Max" },
+          ],
+        },
+        {
+          id: "speed",
+          name: "Speed",
+          category: "model_config",
+          type: "select",
+          currentValue: currentFast ? "fast" : "standard",
+          options: [
+            { value: "standard", name: "Standard" },
+            { value: "fast", name: "Fast" },
+          ],
+        },
+      ];
+    }
+    return baseOptions;
+  }
   if (antigravityProfile) {
     return [
       {
@@ -395,6 +463,18 @@ const program = Effect.gen(function* () {
       }
       parameterizedModelPicker =
         request.clientCapabilities?._meta?.parameterizedModelPicker === true;
+      if (devinProfile) {
+        return {
+          protocolVersion: 1,
+          agentInfo: { name: "devin-acp", version: "mock" },
+          agentCapabilities: {
+            loadSession: true,
+            sessionCapabilities: { list: {} },
+            promptCapabilities: { image: true },
+          },
+          authMethods: [{ id: "devin-browser", name: "Sign in with Devin" }],
+        };
+      }
       if (antigravityProfile) {
         return {
           protocolVersion: 1,
@@ -420,25 +500,53 @@ const program = Effect.gen(function* () {
 
   // Mirrors the real agent: the API key method reads GEMINI_API_KEY from the
   // process environment and rejects when it is missing.
+  // Devin's real `devin-browser` method always starts a browser login, so T3
+  // must never call authenticate. Failing loudly makes the tests assert that.
   yield* agent.handleAuthenticate((request) =>
-    !antigravityProfile || request.methodId === "oauth-personal"
-      ? Effect.succeed({})
-      : request.methodId === "gemini-api-key" && process.env.GEMINI_API_KEY
+    devinProfile
+      ? Effect.fail(
+          AcpError.AcpRequestError.invalidParams("Mock Devin must not receive authenticate.", {
+            method: "authenticate",
+            params: request,
+          }),
+        )
+      : !antigravityProfile || request.methodId === "oauth-personal"
         ? Effect.succeed({})
-        : Effect.fail(
-            AcpError.AcpRequestError.invalidParams(
-              `Mock Antigravity rejected auth method ${request.methodId}.`,
+        : request.methodId === "gemini-api-key" && process.env.GEMINI_API_KEY
+          ? Effect.succeed({})
+          : Effect.fail(
+              AcpError.AcpRequestError.invalidParams(
+                `Mock Antigravity rejected auth method ${request.methodId}.`,
+              ),
             ),
-          ),
   );
   if (antigravityProfile) {
     yield* agent.handleLogout(() => Effect.succeed({}));
   }
 
+  const publishDevinCommands = (targetSessionId: string) =>
+    agent.client.sessionUpdate({
+      sessionId: targetSessionId,
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: [
+          { name: "compact", description: "Compact the session" },
+          { name: "help", description: "Show help" },
+          { name: "model", description: "Switch model" },
+          { name: "login", description: "Sign in" },
+        ],
+      },
+    });
+
   yield* agent.handleCreateSession(() =>
     Effect.gen(function* () {
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
+      }
+      if (devinProfile) {
+        // The real CLI pushes available_commands_update before the
+        // session/new response lands.
+        yield* publishDevinCommands(sessionId);
       }
       return {
         sessionId,
@@ -520,6 +628,9 @@ const program = Effect.gen(function* () {
       if (emitLoadReplay) {
         emitLoadReplayNotifications(requestedSessionId);
       }
+      if (devinProfile) {
+        yield* publishDevinCommands(requestedSessionId);
+      }
       yield* agent.client.sessionUpdate({
         sessionId: requestedSessionId,
         update: {
@@ -570,6 +681,16 @@ const program = Effect.gen(function* () {
       if (request.configId === "mode" && typeof request.value === "string") {
         currentModeId = request.value;
       }
+      if (devinProfile && request.configId === "model" && typeof request.value === "string") {
+        // Devin only accepts exact advertised option values.
+        const known = ["adaptive", "swe-1-7-lightning-medium"];
+        if (!known.includes(request.value)) {
+          return yield* AcpError.AcpRequestError.invalidParams(
+            `Unknown Devin model value: ${request.value}`,
+            { method: "session/set_config_option", params: request },
+          );
+        }
+      }
       if (request.configId === "model" && typeof request.value === "string") {
         currentModelId = request.value;
       }
@@ -581,6 +702,12 @@ const program = Effect.gen(function* () {
       }
       if (request.configId === "fast") {
         currentFast = request.value === true || request.value === "true";
+      }
+      if (request.configId === "thought_level" && typeof request.value === "string") {
+        currentReasoning = request.value;
+      }
+      if (request.configId === "speed" && typeof request.value === "string") {
+        currentFast = request.value === "fast";
       }
       return {
         configOptions: configOptions(),
@@ -1060,19 +1187,44 @@ const program = Effect.gen(function* () {
           },
         });
 
-        const permissionOptions: Array<AcpSchema.PermissionOption> = [
-          { optionId: permissionOptionIds.allowOnce, name: "Allow once", kind: "allow_once" },
-          ...(omitAllowAlways
-            ? []
-            : [
-                {
-                  optionId: permissionOptionIds.allowAlways,
-                  name: "Allow always",
-                  kind: "allow_always" as const,
-                },
-              ]),
-          { optionId: permissionOptionIds.rejectOnce, name: "Reject", kind: "reject_once" },
-        ];
+        const permissionOptions: Array<AcpSchema.PermissionOption> = devinProfile
+          ? [
+              { optionId: "allow_once", name: "Allow", kind: "allow_once" },
+              {
+                optionId: "allow_session",
+                name: "Yes, allow `cat` commands (this session)",
+                kind: "allow_always",
+              },
+              {
+                optionId: "allow_always",
+                name: "Yes, always allow `cat` commands in `mock`",
+                kind: "allow_always",
+              },
+              {
+                optionId: "allow_always_global",
+                name: "Yes, always allow `cat` commands in all projects",
+                kind: "allow_always",
+              },
+              {
+                optionId: "switch_bypass",
+                name: "Yes, switch to bypass mode",
+                kind: "allow_always",
+              },
+              { optionId: "reject_once", name: "Reject", kind: "reject_once" },
+            ]
+          : [
+              { optionId: permissionOptionIds.allowOnce, name: "Allow once", kind: "allow_once" },
+              ...(omitAllowAlways
+                ? []
+                : [
+                    {
+                      optionId: permissionOptionIds.allowAlways,
+                      name: "Allow always",
+                      kind: "allow_always" as const,
+                    },
+                  ]),
+              { optionId: permissionOptionIds.rejectOnce, name: "Reject", kind: "reject_once" },
+            ];
 
         let cancelled = cancelledSessions.delete(requestedSessionId);
         for (let index = 0; index < permissionRequestCount; index++) {
@@ -1195,6 +1347,43 @@ const program = Effect.gen(function* () {
           ],
         });
 
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitDevinPlan) {
+        const planToolCallId = "functions.write_plan:1";
+        const planPath = "/tmp/mock-devin/plans/plan-mock.md";
+        const planMarkdown =
+          "---\nagent: devin-local\nsession: mock-session-1\n---\n# Mock Devin plan\n\n- Step one\n";
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: planToolCallId,
+            title: "Updated plan: Mock Devin plan",
+            kind: "edit",
+            content: [{ type: "diff", path: planPath, newText: planMarkdown }],
+            _meta: { "cognition.ai/inferenceToolName": "write_plan" },
+          },
+        });
+        // The real CLI repeats the diff content on completion.
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: planToolCallId,
+            status: "completed",
+            content: [{ type: "diff", path: planPath, newText: planMarkdown }],
+            _meta: { "cognition.ai/inferenceToolName": "write_plan" },
+          },
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Plan ready." },
+          },
+        });
         return { stopReason: "end_turn" };
       }
 
@@ -1434,6 +1623,9 @@ const program = Effect.gen(function* () {
         }
         return {};
       });
+    }
+    if (method === "session/delete") {
+      return Effect.succeed({});
     }
     if (method === "cursor/list_available_models") {
       return Effect.succeed({
