@@ -31,6 +31,7 @@ import {
   makeDevinModelDiscovery,
 } from "../Layers/DevinProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
+import { readDevinUsageLimits } from "../Layers/devinUsageLimits.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -140,9 +141,25 @@ export const DevinDriver: ProviderDriver<DevinSettings, DevinDriverEnv> = {
         processEnv,
         modelDiscovery.discover,
       ).pipe(
+        Effect.filterOrElse(
+          (snapshot) =>
+            !(
+              effectiveConfig.enabled &&
+              snapshot.installed &&
+              snapshot.auth.status === "authenticated"
+            ),
+          (snapshot) =>
+            Effect.map(readDevinUsageLimits(processEnv), (usageLimits) => ({
+              ...snapshot,
+              usageLimits,
+            })),
+        ),
         Effect.map(stampIdentity),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
