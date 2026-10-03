@@ -2,13 +2,65 @@ import { Image } from "expo-image";
 import { Path, Svg } from "react-native-svg";
 import { View } from "react-native";
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
+import { useState } from "react";
+import { resolveOfficialAcpRegistryIconUrl } from "@t3tools/contracts";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "./AppText";
 
 type ProviderIconProps = {
   readonly provider: string | null | undefined;
+  readonly iconUrl?: string | null | undefined;
   readonly size?: number;
 };
+
+function AcpRegistryFallbackIcon(props: { readonly color: string; readonly size: number }) {
+  return (
+    <Svg width={props.size} height={props.size} viewBox="0 0 576 220" fill="none">
+      <Path
+        fill={props.color}
+        d="M568.003 115.821 517.278 27.966C507.183 10.482 489.084.023 468.894.023c-20.167 0-38.22 10.413-48.338 27.852L343.251 161.75H242.755c-6.525 0-12.369-3.365-15.62-9.004-3.274-5.639-3.274-12.369 0-18.03l50.726-87.855c3.251-5.639 9.094-9.027 15.62-9.027 6.525 0 12.346 3.365 15.62 9.027l3.024 5.229a6.81 6.81 0 0 0 5.911 3.411c2.433 0 4.707-1.319 5.912-3.433l13.437-23.555c1.41-2.479 1.137-5.571-.682-7.753C325.699 7.57 309.874 0 293.322 0c-.66 0-1.319 0-2.001.045-19.281.705-36.561 11.141-46.247 27.898l-44.859 77.714-44.405-76.509C145.465 11.209 126.594.023 106.608.023c-.659 0-1.319 0-2.001.045-19.28.705-36.56 11.141-46.246 27.898L7.658 115.821c-13.915 24.078-8.526 52.999 13.392 71.938 8.844 7.663 20.554 11.869 32.968 11.869h94.63c2.433 0 4.684-1.296 5.912-3.411l13.96-24.191a6.81 6.81 0 0 0 0-6.821c-1.228-2.115-3.479-3.411-5.912-3.411H56.042c-6.526 0-12.369-3.365-15.62-9.004-3.275-5.638-3.275-12.368 0-18.03l50.725-87.854c3.252-5.639 9.095-9.027 15.62-9.027 6.526 0 12.346 3.365 15.62 9.027l72.439 125.62c.205.364.432.682.705 1 3.229 5.139 7.299 9.959 12.255 14.256 8.845 7.662 20.554 11.869 32.968 11.869h80.67l-5.843 10.118a6.81 6.81 0 0 0 0 6.821c1.228 2.114 3.478 3.41 5.911 3.41h27.944c2.432 0 4.683-1.296 5.911-3.41l9.049-15.689 2.774-4.433.114-.205 85.99-149.334c3.251-5.639 9.095-9.027 15.62-9.027 6.526 0 12.369 3.365 15.62 9.027l50.726 87.855c3.251 5.639 3.274 12.391 0 18.03-3.252 5.639-9.095 9.027-15.62 9.027H418.669c-2.433 0-4.684 1.296-5.912 3.41l-13.983 24.192a6.81 6.81 0 0 0 0 6.821c1.228 2.114 3.479 3.41 5.912 3.41H518.21c21.6 0 41.085-11.436 50.816-29.83 9.027-17.053 8.64-37.22-1.045-54Z"
+      />
+    </Svg>
+  );
+}
+
+function AcpRegistryProviderIcon(props: {
+  readonly color: string;
+  readonly iconUrl: string | null | undefined;
+  readonly size: number;
+}) {
+  const iconUrl = resolveOfficialAcpRegistryIconUrl(props.iconUrl);
+  const [image, setImage] = useState<{
+    readonly iconUrl: string;
+    readonly status: "loaded" | "failed";
+  } | null>(null);
+  const currentImage = image?.iconUrl === iconUrl ? image : null;
+  const loaded = currentImage?.status === "loaded";
+
+  return (
+    <View style={{ width: props.size, height: props.size }}>
+      {!loaded ? <AcpRegistryFallbackIcon color={props.color} size={props.size} /> : null}
+      {iconUrl !== null && currentImage?.status !== "failed" ? (
+        <Image
+          accessibilityIgnoresInvertColors
+          cachePolicy="memory-disk"
+          contentFit="contain"
+          recyclingKey={iconUrl}
+          source={{ uri: iconUrl }}
+          style={{
+            position: "absolute",
+            width: props.size,
+            height: props.size,
+            opacity: loaded ? 1 : 0,
+            tintColor: props.color,
+          }}
+          onError={() => setImage({ iconUrl, status: "failed" })}
+          onLoad={() => setImage({ iconUrl, status: "loaded" })}
+        />
+      ) : null}
+    </View>
+  );
+}
 
 export function ProviderIcon(props: ProviderIconProps) {
   const { themeAppearance } = useAppearancePreferences();
@@ -24,6 +76,9 @@ export function ProviderIcon(props: ProviderIconProps) {
         contentFit="contain"
       />
     );
+  }
+  if (props.provider === "acpRegistry") {
+    return <AcpRegistryProviderIcon color={mono} iconUrl={props.iconUrl} size={size} />;
   }
 
   if (props.provider === "claudeAgent") {
@@ -53,17 +108,6 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
-  if (props.provider === "devin") {
-    return (
-      <Svg width={size} height={size} viewBox="70 50 287 326" fill="none">
-        <Path
-          fill={isDarkMode ? "#F5F5F5" : "#0F0F0F"}
-          d="M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"
-        />
-      </Svg>
-    );
-  }
-
   if (props.provider === "cursor") {
     return (
       <Svg width={size} height={size} viewBox="0 0 466.73 532.09" fill="none">
@@ -71,6 +115,20 @@ export function ProviderIcon(props: ProviderIconProps) {
           fill={isDarkMode ? "#EDECEC" : "#26251E"}
           d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z"
         />
+      </Svg>
+    );
+  }
+
+  if (props.provider === "pi") {
+    const foreground = isDarkMode ? "#F5F5F5" : "#0F0F0F";
+    return (
+      <Svg width={size} height={size} viewBox="165.29 165.29 469.43 469.43" fill="none">
+        <Path
+          fill={foreground}
+          fillRule="evenodd"
+          d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+        />
+        <Path fill={foreground} d="M517.36 400H634.72V634.72H517.36Z" />
       </Svg>
     );
   }
@@ -105,6 +163,7 @@ export function ProviderIcon(props: ProviderIconProps) {
  * `apps/web/src/components/chat/ProviderInstanceIcon.tsx`.
  */
 export function ProviderInstanceIcon(props: {
+  readonly iconUrl?: string | null;
   readonly provider: string | null | undefined;
   readonly size?: number;
   readonly displayName: string;
@@ -115,7 +174,7 @@ export function ProviderInstanceIcon(props: {
   return (
     <View style={{ position: "relative" }}>
       <View style={{ opacity: 0.6 }}>
-        <ProviderIcon provider={props.provider} size={props.size} />
+        <ProviderIcon iconUrl={props.iconUrl} provider={props.provider} size={props.size} />
       </View>
       {props.showBadge ? (
         <View

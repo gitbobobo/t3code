@@ -203,6 +203,7 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarDeviceScopeKey: null,
       pullRequestMergeMethod: "merge",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -325,6 +326,7 @@ describe("uiStateStore persistence", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarDeviceScopeKey: null,
       threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -351,6 +353,20 @@ describe("uiStateStore persistence", () => {
     );
   });
 
+  it("restores and clears the sidebar device scope across reloads", () => {
+    persistState(makeUiState({ sidebarDeviceScopeKey: "environment-remote" }));
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(parsePersistedState(persisted).sidebarDeviceScopeKey).toBe("environment-remote");
+
+    persistState(makeUiState({ sidebarDeviceScopeKey: null }));
+    const cleared = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(parsePersistedState(cleared).sidebarDeviceScopeKey).toBeNull();
+  });
+
   it("drops the temporary expanded-only migration fallback when rewriting state", () => {
     const migrated = parsePersistedState({
       expandedProjectCwds: ["/repo/a"],
@@ -362,5 +378,6 @@ describe("uiStateStore persistence", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(resolveProjectExpanded(persisted.projectExpandedById ?? {}, ["unknown"])).toBe(true);
+    expect(persisted).not.toHaveProperty("threadPanelOpen");
   });
 });

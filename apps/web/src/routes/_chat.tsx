@@ -14,6 +14,7 @@ import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarDeviceScope } from "../hooks/useSidebarDeviceScope";
+import { useScratchProject } from "../hooks/useScratchProject";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -31,13 +32,15 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { newThreadActionContext, routeThreadRef } = useHandleNewThread();
+  const { activeThread, activeDraftThread, newThreadActionContext, routeThreadRef } =
+    useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scopeEnvironmentId: deviceScopeId } = useSidebarDeviceScope();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
@@ -105,6 +108,17 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "chat.newWithoutProject") {
+        const environmentId = scratchEnvironmentId(
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+        );
+        if (environmentId === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void startScratchThread(environmentId);
+        return;
+      }
+
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
@@ -168,13 +182,18 @@ function ChatRouteGlobalShortcuts() {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [
+    activeThread,
+    activeDraftThread,
     clearSelection,
     keybindings,
     newThreadActionContext,
     previewOpen,
+    primaryEnvironmentId,
     projectGroupCount,
     routeThreadRef,
+    scratchEnvironmentId,
     selectedThreadKeysSize,
+    startScratchThread,
     legacySidebarEnabled,
     terminalOpen,
   ]);

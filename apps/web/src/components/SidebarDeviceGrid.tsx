@@ -24,8 +24,9 @@ const DEVICE_STATUS_ORDER: readonly SidebarThreadStatus[] = [
   "approval",
   "input",
   "working",
-  "monitoring",
+  "waiting",
   "failed",
+  "limited",
   "ready",
 ];
 
@@ -33,19 +34,20 @@ const DEVICE_STATUS_LABELS: Record<SidebarThreadStatus, string> = {
   approval: "pending approval",
   input: "awaiting input",
   working: "working",
-  monitoring: "monitoring",
+  waiting: "waiting",
   failed: "failed",
+  limited: "usage limited",
   ready: "ready",
 };
 
-// Same colors as the row status pills: amber attention, indigo input,
-// sky motion, red failure, muted rest.
+// Semantic colors follow the client's theme for attention, work, and failure.
 const DEVICE_STATUS_DOT_CLASS_NAMES: Record<SidebarThreadStatus, string> = {
-  approval: "bg-amber-500 dark:bg-amber-300/90",
-  input: "bg-indigo-500 dark:bg-indigo-300/90",
-  working: "bg-sky-500 dark:bg-sky-300/80",
-  monitoring: "bg-sky-500/50 dark:bg-sky-300/50",
+  approval: "bg-warning",
+  input: "bg-primary",
+  working: "bg-info",
+  waiting: "bg-muted-foreground/40",
   failed: "bg-destructive",
+  limited: "bg-warning",
   ready: "bg-muted-foreground/40",
 };
 
@@ -67,9 +69,10 @@ function deviceStatusChips(
   );
 }
 
-function compactSyncAgeLabel(syncedAt: string): string {
+function compactSyncAgeLabel(syncedAt: string): string | null {
   const ageMs = Date.now() - Date.parse(syncedAt);
-  if (!Number.isFinite(ageMs) || ageMs < 0) return "now";
+  if (!Number.isFinite(ageMs)) return null;
+  if (ageMs < 0) return "now";
   const minutes = Math.floor(ageMs / 60_000);
   if (minutes < 1) return "now";
   if (minutes < 60) return `${minutes}m`;
@@ -87,26 +90,29 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
 } {
   if (countsState.kind === "loading") {
     return {
-      row: <span className="truncate text-[10px] text-sidebar-muted-foreground/60">Syncing…</span>,
+      row: <span className="truncate text-3xs text-sidebar-muted-foreground/60">Syncing…</span>,
       tooltip: "Syncing…",
     };
   }
   if (countsState.kind === "unknown") {
     return {
       row: (
-        <span className="truncate text-[10px] text-sidebar-muted-foreground/60">
-          Counts unknown
-        </span>
+        <span className="truncate text-3xs text-sidebar-muted-foreground/60">Counts unknown</span>
       ),
       tooltip: "Counts unknown",
     };
   }
   const isCached = countsState.kind === "cached";
   const isSynchronizing = countsState.kind === "synchronizing";
+  const syncAge = isCached || isSynchronizing ? compactSyncAgeLabel(countsState.syncedAt) : null;
   const statePrefix = isCached
-    ? `Offline · last synced ${compactSyncAgeLabel(countsState.syncedAt)} ago`
+    ? syncAge === null
+      ? "Offline · cached counts"
+      : `Offline · last synced ${syncAge} ago`
     : isSynchronizing
-      ? `Syncing · last synced ${compactSyncAgeLabel(countsState.syncedAt)} ago`
+      ? syncAge === null
+        ? "Syncing · cached counts"
+        : `Syncing · last synced ${syncAge} ago`
       : countsState.kind === "mixed"
         ? countsState.hasCachedData && !countsState.isComplete
           ? "Includes cached data · statistics incomplete"
@@ -123,7 +129,7 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
   if (chips.length === 0 && completedSummary === null) {
     return {
       row: (
-        <span className="text-[10px] text-sidebar-muted-foreground/60">
+        <span className="text-3xs text-sidebar-muted-foreground/60">
           {statePrefix ?? "No threads"}
         </span>
       ),
@@ -141,7 +147,7 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
         {chips.map(({ status, count }) => (
           <span
             key={status}
-            className="flex items-center gap-0.5 font-mono text-[10px] leading-none tabular-nums text-sidebar-muted-foreground"
+            className="flex items-center gap-0.5 font-mono text-3xs leading-none tabular-nums text-sidebar-muted-foreground"
           >
             <span
               aria-hidden
@@ -154,8 +160,8 @@ function deviceCountsRow(countsState: SidebarDeviceCountsState): {
           </span>
         ))}
         {completedSummary !== null ? (
-          <span className="flex items-center gap-0.5 font-mono text-[10px] leading-none tabular-nums text-sidebar-muted-foreground">
-            <CheckCircle2 aria-hidden className="size-2.5 text-emerald-500" />
+          <span className="flex items-center gap-0.5 font-mono text-3xs leading-none tabular-nums text-sidebar-muted-foreground">
+            <CheckCircle2 aria-hidden className="size-2.5 text-success" />
             {countsState.counts.completed}
           </span>
         ) : null}
@@ -247,7 +253,7 @@ export function SidebarDeviceGrid(props: {
         <button
           type="button"
           onClick={() => setIsExpanded((expanded) => !expanded)}
-          className="cursor-pointer text-left text-[11px] font-medium text-sidebar-muted-foreground/55 transition-colors hover:text-sidebar-foreground"
+          className="cursor-pointer text-left text-2xs font-medium text-sidebar-muted-foreground/55 transition-colors hover:text-sidebar-foreground"
         >
           {isExpanded
             ? "Show fewer environments"
