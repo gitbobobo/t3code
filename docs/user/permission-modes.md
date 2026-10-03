@@ -21,17 +21,16 @@ not prevent the agent from asking questions about the task.
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto** uses automatic review on Codex, Claude, and Cursor; providers without an equivalent,
-including OpenCode and Antigravity, fall back to asking.
+**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
+to you for approval.
 
-For Grok, **Always allow this session** remembers the matching command or tool input. Other
-actions still require approval.
+Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
+file-change approvals offer **Allow all edits this session**. Its command approvals have no
+session-wide choice, because Grok would remember that command for the whole project.
 
-Devin has no always-ask mode over ACP, so **Supervised** behaves like **Auto-accept edits**:
-workspace edits auto-approve while commands still ask. **Auto** uses Devin's Smart mode and
-falls back to asking where Smart is not available. **Always allow this session** applies only
-to that Devin session; the persistent allow options Devin offers are never selected
-automatically.
+ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.

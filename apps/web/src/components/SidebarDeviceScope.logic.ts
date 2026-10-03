@@ -4,7 +4,9 @@ import type { SidebarThreadSummary } from "../types";
 
 import {
   hasUnseenCompletion,
+  isSidebarSubagentThread,
   resolveSidebarThreadStatus,
+  resolveThreadLastVisitedAt,
   type SidebarThreadStatus,
   type SidebarThreadStatusInput,
 } from "./Sidebar.logic";
@@ -47,7 +49,16 @@ export function canCreateThreadInSidebarDeviceScope(input: {
 }
 
 export function createEmptySidebarDeviceStatusCounts(): SidebarDeviceStatusCounts {
-  return { approval: 0, input: 0, working: 0, monitoring: 0, failed: 0, ready: 0, completed: 0 };
+  return {
+    approval: 0,
+    input: 0,
+    working: 0,
+    waiting: 0,
+    failed: 0,
+    limited: 0,
+    ready: 0,
+    completed: 0,
+  };
 }
 
 export function countSidebarThreadsByDevice<
@@ -58,7 +69,9 @@ export function countSidebarThreadsByDevice<
       | "environmentId"
       | "archivedAt"
       | "settledOverride"
-      | "latestTurn"
+      | "latestRun"
+      | "lastVisitedAt"
+      | "lineage"
       | "hasActionableProposedPlan"
       | "interactionMode"
     >,
@@ -68,13 +81,20 @@ export function countSidebarThreadsByDevice<
 ): ReadonlyMap<string, SidebarDeviceStatusCounts> {
   const countsByEnvironment = new Map<string, SidebarDeviceStatusCounts>();
   for (const thread of threads) {
-    if (thread.archivedAt !== null || thread.settledOverride === "settled") continue;
+    if (
+      thread.archivedAt !== null ||
+      thread.settledOverride === "settled" ||
+      isSidebarSubagentThread(thread)
+    )
+      continue;
     const counts = {
       ...(countsByEnvironment.get(thread.environmentId) ?? createEmptySidebarDeviceStatusCounts()),
     };
     const status = resolveSidebarThreadStatus(thread);
-    const lastVisitedAt =
-      lastVisitedAtByThreadKey?.[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+    const lastVisitedAt = resolveThreadLastVisitedAt(
+      thread.lastVisitedAt,
+      lastVisitedAtByThreadKey?.[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+    );
     // The row shows the green Done pill for exactly this case: a quiet thread
     // whose latest completion landed after the user's last visit.
     const isDone = status === "ready" && hasUnseenCompletion({ ...thread, lastVisitedAt });

@@ -102,11 +102,6 @@ Grok reports the remaining subscription allowance and reset time for its current
 after signing in with `grok login`. Explicit `XAI_API_KEY` connections and custom authentication
 or endpoint configurations do not report subscription limits.
 
-Devin reports the daily and weekly quota of plans billed by quota, with each reset time, using the
-login saved by `devin auth login` or `WINDSURF_API_KEY`. Limits shows the same windows as Devin's
-`/usage`, so a plan without a daily quota shows only the weekly one. Plans billed by credits or
-ACUs do not report limits.
-
 API-key accounts may not report subscription limits. This also applies to Claude connections
 using a proxy through `ANTHROPIC_AUTH_TOKEN`.
 
@@ -125,9 +120,9 @@ settings section when you no longer need it.
 ## Subscription usage widget
 
 Add **Subscription usage** from your iOS or Android widget gallery to see remaining Codex and
-Claude quotas. Tap it to open **Usage → Limits**. On iOS, use **Edit Widget** to choose Session,
-Weekly, or both for each provider. Reopen T3 to refresh expired readings. The Android widget
-requires Android 12L or later.
+Claude quotas. Tap it to open **Usage → Limits**; on Android this works while T3 is running in
+the background, otherwise open the app from the launcher. On iOS, use **Edit Widget** to choose
+Session, Weekly, or both for each provider. Reopen T3 to refresh expired readings.
 
 ## Keyboard shortcuts
 
