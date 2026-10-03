@@ -45,7 +45,9 @@ const DEVICE_STATUS_DOT_CLASS_NAMES: Record<SidebarThreadStatus, string> = {
   approval: "bg-warning",
   input: "bg-primary",
   working: "bg-info",
-  waiting: "bg-muted-foreground/40",
+  // Waiting keeps the row label's full-strength muted tone so open background
+  // work reads louder than a fully resting (ready) thread.
+  waiting: "bg-muted-foreground",
   failed: "bg-destructive",
   limited: "bg-warning",
   ready: "bg-muted-foreground/40",
