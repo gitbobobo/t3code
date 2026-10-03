@@ -146,6 +146,36 @@ describe("chat canvas layout", () => {
     expect(result.overlapsDetailsCard).toBe(false);
     expectClear(result);
   });
+  it("keeps the card's width independent of the chat lane used to clear it", () => {
+    const container = { width: 1136, height: 600 };
+    const input = {
+      container,
+      preview: {
+        ...preview,
+        width: 240,
+        source: { width: 240, height: 700 },
+        position: { x: 884, y: 12 },
+      },
+    };
+    const preferred = resolveChatCanvasLayout(input);
+    const card = resolveThreadDetailsCardLayout({
+      container,
+      chat: preferred.preferredChat,
+      frame: null,
+    })!;
+    expect(card.width).toBe(240);
+    const result = resolveChatCanvasLayout({
+      ...input,
+      detailsCard: { left: card.x, right: card.x + card.width, bottom: 339 },
+    });
+    expect(result.chat.width).toBe(643);
+    expect(result.preferredChat).toEqual(preferred.preferredChat);
+    expect(
+      resolveThreadDetailsCardLayout({ container, ...result, chat: result.preferredChat }),
+    ).toEqual(card);
+    expect(result.overlapsDetailsCard).toBe(false);
+    expectClear(result);
+  });
   it("keeps a large player when clearing the full card would leave no readable chat", () => {
     const container = { width: 1584, height: 988 };
     const source = { width: 1000, height: 1523 };

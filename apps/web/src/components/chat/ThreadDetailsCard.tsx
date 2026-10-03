@@ -29,12 +29,16 @@ export function ThreadDetailsCard({
   const preferredPlacement = canvas
     ? resolveThreadDetailsCardLayout({
         container: canvas.container,
-        chat: canvas.layout.chat,
+        chat: canvas.layout.preferredChat,
         frame: null,
       })
     : null;
   const placement = canvas
-    ? resolveThreadDetailsCardLayout({ container: canvas.container, ...canvas.layout })
+    ? resolveThreadDetailsCardLayout({
+        container: canvas.container,
+        ...canvas.layout,
+        chat: canvas.layout.preferredChat,
+      })
     : null;
   const mode = placement ? "inline" : "popover";
   const inlineOpen = useRightPanelStore((state) =>

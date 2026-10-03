@@ -41,6 +41,7 @@ export function resolveChatCanvasLayout({
   const normalWidth = Math.max(0, Math.min(maxChatWidth, container.width - padding * 2));
   const normalLeft = (container.width - normalWidth) / 2;
   let chat = { left: normalLeft, width: normalWidth, insetStart: 0, insetEnd: 0 };
+  let preferredChat = chat;
   let frame: PreviewMiniPlayerFrame | null = null;
   let overlapsChat = false;
   if (preview && container.width > 0 && container.height > 0) {
@@ -102,6 +103,8 @@ export function resolveChatCanvasLayout({
         insetEnd: Math.max(0, container.width - left * 2 - width),
       };
     };
+    // Card width must not depend on the preview's response to that same card.
+    preferredChat = chatBeside(preferredFrame) ?? chat;
     let nextChat = chatBeside(frame);
     // Clearing the full card must also leave a readable chat. If only the
     // preferred position does, keep the resized player and let the card fold.
@@ -119,6 +122,7 @@ export function resolveChatCanvasLayout({
         insetStart: 0,
         insetEnd: Math.max(0, container.width - padding * 2 - width),
       };
+      preferredChat = chat;
     } else if (overlapsChat) {
       const obstacles = {
         detailsCard: cardObstacle,
@@ -162,5 +166,5 @@ export function resolveChatCanvasLayout({
     frame.x + frame.width > detailsCard.left &&
     frame.y < detailsCard.bottom,
   );
-  return { chat, frame, overlapsChat, overlapsDetailsCard };
+  return { chat, preferredChat, frame, overlapsChat, overlapsDetailsCard };
 }
