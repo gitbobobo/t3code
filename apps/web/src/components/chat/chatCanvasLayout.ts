@@ -19,8 +19,11 @@ export interface ChatCanvasPreview {
 }
 
 const GAP = 12;
+// Minimum space between chat and the workspace card. Chat stays centered while
+// the card fits beside it with this much room.
+export const DETAILS_CARD_CLEARANCE = 32;
 
-/** Pure geometry shared by the conversation, composer, and floating preview. */
+/** Pure geometry shared by the conversation, composer, workspace card, and floating preview. */
 export function resolveChatCanvasLayout({
   container,
   preview,
@@ -38,10 +41,24 @@ export function resolveChatCanvasLayout({
   composerHeight?: number;
   detailsCard?: PreviewMiniPlayerObstacles["detailsCard"];
 }) {
-  const normalWidth = Math.max(0, Math.min(maxChatWidth, container.width - padding * 2));
-  const normalLeft = (container.width - normalWidth) / 2;
-  let chat = { left: normalLeft, width: normalWidth, insetStart: 0, insetEnd: 0 };
-  let preferredChat = chat;
+  const centeredWidth = Math.max(0, Math.min(maxChatWidth, container.width - padding * 2));
+  // A workspace card that does not fit beside the centered chat first moves
+  // chat left, only as far as it needs. Chat narrows only after it reaches the
+  // left padding.
+  const laneRight = detailsCard
+    ? detailsCard.left - DETAILS_CARD_CLEARANCE
+    : container.width - padding;
+  const normalWidth = Math.max(0, Math.min(centeredWidth, laneRight - padding));
+  const normalLeft = Math.max(
+    padding,
+    Math.min((container.width - normalWidth) / 2, laneRight - normalWidth),
+  );
+  let chat = {
+    left: normalLeft,
+    width: normalWidth,
+    insetStart: 0,
+    insetEnd: Math.max(0, container.width - normalLeft * 2 - normalWidth),
+  };
   let frame: PreviewMiniPlayerFrame | null = null;
   let overlapsChat = false;
   if (preview && container.width > 0 && container.height > 0) {
@@ -103,8 +120,6 @@ export function resolveChatCanvasLayout({
         insetEnd: Math.max(0, container.width - left * 2 - width),
       };
     };
-    // Card width must not depend on the preview's response to that same card.
-    preferredChat = chatBeside(preferredFrame) ?? chat;
     let nextChat = chatBeside(frame);
     // Clearing the full card must also leave a readable chat. If only the
     // preferred position does, keep the resized player and let the card fold.
@@ -122,7 +137,6 @@ export function resolveChatCanvasLayout({
         insetStart: 0,
         insetEnd: Math.max(0, container.width - padding * 2 - width),
       };
-      preferredChat = chat;
     } else if (overlapsChat) {
       const obstacles = {
         detailsCard: cardObstacle,
@@ -166,5 +180,5 @@ export function resolveChatCanvasLayout({
     frame.x + frame.width > detailsCard.left &&
     frame.y < detailsCard.bottom,
   );
-  return { chat, preferredChat, frame, overlapsChat, overlapsDetailsCard };
+  return { chat, frame, overlapsChat, overlapsDetailsCard };
 }

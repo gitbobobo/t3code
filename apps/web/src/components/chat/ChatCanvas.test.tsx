@@ -23,13 +23,13 @@ const threadRef = {
 const preview: ChatCanvasPreview = {
   key: "device:test",
   width: 240,
-  position: { x: 884, y: 12 },
+  position: { x: 948, y: 12 },
   source: { width: 240, height: 700 },
   lastInteraction: "drag",
 };
 let root: Root;
 let host: HTMLDivElement;
-let canvasWidth = 1136;
+let canvasWidth = 1200;
 let layout: NonNullable<ReturnType<typeof useChatCanvas>>["layout"];
 const resizeCallbacks = new Map<Element, () => void>();
 
@@ -64,7 +64,7 @@ function Workspace({ player = preview }: { player?: ChatCanvasPreview | null }) 
 }
 
 beforeEach(() => {
-  canvasWidth = 1136;
+  canvasWidth = 1200;
   resizeCallbacks.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -130,8 +130,8 @@ describe("details card and floating preview layout", () => {
   it("settles when clearing a tall preview changes the chat lane", async () => {
     await act(() => root.render(<Workspace />));
     const card = host.querySelector<HTMLElement>("[data-thread-details-panel='inline']")!;
-    expect(card.style.width).toBe("240px");
-    expect(layout.chat.width).toBe(643);
+    expect(card.style.width).toBe("280px");
+    expect(layout.chat.width).toBe(667);
     expect(layout.frame!.x + layout.frame!.width).toBeLessThanOrEqual(
       Number.parseFloat(card.style.left) - 12,
     );
@@ -142,14 +142,14 @@ describe("details card and floating preview layout", () => {
     await act(() => root.render(<Workspace />));
     await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", false));
     expect(host.querySelector("[data-thread-details-panel='inline']")).toBeNull();
-    expect(layout.frame!.x).toBe(884);
+    expect(layout.frame!.x).toBe(948);
     await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadRef, "inline", true));
-    expect(layout.chat.width).toBe(643);
+    expect(layout.chat.width).toBe(667);
     canvasWidth = 1600;
     await act(() => resizeCallbacks.get(host.querySelector("[data-chat-canvas]")!)!());
     expect(
       host.querySelector<HTMLElement>("[data-thread-details-panel='inline']")!.style.width,
-    ).toBe("312px");
+    ).toBe("280px");
     await act(() => root.render(<Workspace player={null} />));
     expect(layout.frame).toBeNull();
     expect(layout.chat.width).toBe(768);

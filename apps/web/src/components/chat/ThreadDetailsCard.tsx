@@ -29,15 +29,16 @@ export function ThreadDetailsCard({
   const preferredPlacement = canvas
     ? resolveThreadDetailsCardLayout({
         container: canvas.container,
-        chat: canvas.layout.preferredChat,
+        lane: canvas.lane,
         frame: null,
       })
     : null;
   const placement = canvas
     ? resolveThreadDetailsCardLayout({
         container: canvas.container,
-        ...canvas.layout,
-        chat: canvas.layout.preferredChat,
+        lane: canvas.lane,
+        frame: canvas.layout.frame,
+        overlapsDetailsCard: canvas.layout.overlapsDetailsCard,
       })
     : null;
   const mode = placement ? "inline" : "popover";
