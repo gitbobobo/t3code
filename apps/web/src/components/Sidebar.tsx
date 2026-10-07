@@ -1228,7 +1228,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
-          input: { cwd: gitCwd },
+          input: { cwd: gitCwd, includeRemote: false },
         })
       : null,
   );
@@ -1277,7 +1277,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const topStatus =
     status === "working"
       ? {
-          label: "Working",
+          // A native /goal keeps the agent going across turns until it is met.
+          label: thread.goal?.status === "active" ? "Goal" : "Working",
           icon: "working" as const,
           // No shimmer: a label that animates forever is noise in a sidebar
           // full of them (and repaints every vsync on high-refresh displays).
@@ -2222,7 +2223,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
-          input: { cwd: gitCwd },
+          input: { cwd: gitCwd, includeRemote: false },
         })
       : null,
   );

@@ -53,7 +53,7 @@ import { inlineCodeFilePathCandidate } from "@t3tools/client-runtime/markdown-li
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import React, {
   Children,
   Suspense,
@@ -190,7 +190,7 @@ import {
 } from "~/lib/openPullRequestLink";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { isPreviewSupportedInRuntime } from "../previewStateStore";
+import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { isAbsolutePath, resolvePathLinkTarget } from "../terminal-links";
 import {
   isBrowserPreviewFile,
@@ -378,7 +378,7 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
  * The default `1.25rem` marker gutter (`.chat-markdown ol`) fits one-character
  * markers. Wider markers can extend past it and get clipped by a collapsed
  * message's overflow. Widen the gutter to fit the widest marker, including a
- * negative marker's minus sign.
+ * negative marker's minus sign, the period, and the trailing space.
  */
 function orderedListGutterStyle(
   itemCount: number,
@@ -389,11 +389,12 @@ function orderedListGutterStyle(
   const lastNumber = firstNumber + Math.max(itemCount - 1, 0);
   const markerWidth = Math.max(String(firstNumber).length, String(lastNumber).length);
   if (markerWidth <= 1) return undefined;
-  return { "--list-gutter": `${markerWidth + 1}ch` };
+  return { "--list-gutter": `${markerWidth + 2}ch` };
 }
 
 type MarkdownImageHastNode = {
   type?: string;
+  value?: string;
   tagName?: string;
   properties?: Record<string, unknown>;
   children?: MarkdownImageHastNode[];
@@ -446,6 +447,54 @@ function markStandaloneImages(node: MarkdownImageHastNode) {
   node.children?.forEach((child) => {
     if (child.type === "element") markStandaloneImages(child);
   });
+}
+
+/** Keep unmatched inline `<A>` placeholders from opening an HTML link over later blocks. */
+function rehypePreserveBareAnchorPlaceholders() {
+  return (tree: MarkdownImageHastNode) => {
+    const anchors: Array<MarkdownImageHastNode | null> = [];
+    let rawTextTag: string | undefined;
+    const visit = (node: MarkdownImageHastNode) => {
+      if (node.type === "raw" && typeof node.value === "string") {
+        // Raw blocks can contain several tags. Consume whole tags, quoted attributes,
+        // and comments so text resembling a closing anchor cannot pair a placeholder.
+        const tags = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
+        let offset = 0;
+        while (rawTextTag !== "plaintext") {
+          // Raw text ends at its closing tag even inside comment-looking text.
+          const matcher = rawTextTag ? new RegExp(`</${rawTextTag}\\s*>`, "gi") : tags;
+          matcher.lastIndex = offset;
+          const match = matcher.exec(node.value);
+          if (!match) break;
+          const [tag] = match;
+          offset = matcher.lastIndex;
+          if (rawTextTag) {
+            rawTextTag = undefined;
+            continue;
+          }
+          if (tag.startsWith("<!--")) continue;
+          const closing = /^<\/([a-z]+)\s*>$/i.exec(tag)?.[1]?.toLowerCase();
+          const opening = /^<([a-z]+)(?:\s|\/?>)/i.exec(tag)?.[1]?.toLowerCase();
+          if (
+            opening &&
+            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/.test(opening)
+          ) {
+            rawTextTag = opening;
+          } else if (opening === "a") {
+            anchors.push(node.value === tag && /^<a\s*\/?>$/i.test(tag) ? node : null);
+          } else if (closing === "a") {
+            anchors.pop();
+          }
+        }
+      }
+      node.children?.forEach(visit);
+    };
+
+    visit(tree);
+    for (const anchor of anchors) {
+      if (anchor) anchor.type = "text";
+    }
+  };
 }
 
 /** Carries authored image source metadata through the sanitizer to the image renderer. */
@@ -514,6 +563,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 
 const CHAT_MARKDOWN_REHYPE_PLUGINS = [
+  rehypePreserveBareAnchorPlaceholders,
   rehypeRaw,
   rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
@@ -1762,7 +1812,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
     AssetResource,
-    { readonly _tag: "attachment" | "workspace-file" | "media-file" | "github-media" }
+    {
+      readonly _tag:
+        | "attachment"
+        | "workspace-file"
+        | "media-file"
+        | "github-media"
+        | "tool-output-image";
+    }
   >;
   readonly kind?: "image" | "video";
   readonly alt: string;
@@ -2796,7 +2853,7 @@ function useChatMarkdownState({
           revealLabel={revealInFileManagerLabel}
           onOpenInBrowser={
             threadRef &&
-            isPreviewSupportedInRuntime() &&
+            isPreviewAvailableFor(threadRef.environmentId) &&
             isBrowserPreviewFile(fileLinkMeta.filePath)
               ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
               : undefined
@@ -3066,7 +3123,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         : null;
       const isSameDocumentLink = href?.startsWith("#") ?? false;
       const onClick = props.onClick;
-      const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
+      const canOpenInPreview = Boolean(threadRef && isPreviewAvailableFor(threadRef.environmentId));
       const linkChildren = <MarkdownLinkContext value>{children}</MarkdownLinkContext>;
       const link = (
         <a
