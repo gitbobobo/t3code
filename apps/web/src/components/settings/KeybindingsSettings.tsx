@@ -1,3 +1,5 @@
+import { useEnvironmentScope } from "../../state/session";
+import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
 import {
   ChevronDownIcon,
   CircleXIcon,
@@ -15,13 +17,14 @@ import {
   type ReactNode,
   type RefObject,
   useCallback,
-  useEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
 } from "react";
 import {
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   type KeybindingCommand,
   type KeybindingWhenNode,
   type ServerRemoveKeybindingInput,
@@ -226,7 +229,7 @@ function WarningTooltipIcon({
             tabIndex={focusable ? 0 : undefined}
             aria-label={label}
             className={cn(
-              "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-warning outline-none transition-colors hover:bg-warning/10 focus-visible:ring-3 focus-visible:ring-warning/25",
+              "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-warning outline-none transition-colors hover:bg-warning/10 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-warning/25",
               className,
             )}
           />
@@ -814,7 +817,7 @@ function KeybindingKeyControl({
           onClick={() => setDraft({ isRecording: true })}
           aria-label={`Edit shortcut for ${commandLabel(row.command)}: ${formatShortcutLabel(row.binding.shortcut)}`}
           className={cn(
-            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border/70 hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/24",
+            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border/70 hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
             pillClassName,
           )}
         >
@@ -1281,6 +1284,14 @@ export function KeybindingsSettingsPanel() {
   // fan out to every connected environment in the selection, so one
   // shortcut change reaches each machine the user runs T3 Code on.
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
+  const canOpenKeybindingsFile = useEnvironmentScope(
+    primaryEnvironment?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const writableIds = useEnvironmentsWithScope(connectedEnvironments, AuthSettingsWriteScope);
+  const canWriteSettings =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every((target) => writableIds.has(target.environmentId));
   const serverKeybindings = primaryEnvironment?.serverConfig?.keybindings;
   const keybindings = useMemo(
     () => mergeWithDefaultKeybindings(serverKeybindings ?? []),
@@ -1328,30 +1339,13 @@ export function KeybindingsSettingsPanel() {
   const commandOptions = useMemo(() => buildKeybindingCommandOptions(keybindings), [keybindings]);
   const whenVariables = useMemo(() => buildWhenVariableOptions(), []);
 
-  useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      const isMod = event.metaKey || event.ctrlKey;
-      if (!isMod || event.altKey || event.key.toLowerCase() !== "f") return;
-
-      const target = event.target;
-      if (
-        target !== searchInputRef.current &&
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      searchInputRef.current?.focus();
-      searchInputRef.current?.select();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   const openKeybindingsFile = useCallback(() => {
-    if (!keybindingsConfigPath) return;
+    if (
+      !keybindingsConfigPath ||
+      !primaryEnvironment ||
+      !readEnvironmentScope(primaryEnvironment.environmentId, AuthOrchestrationOperateScope)
+    )
+      return;
     void (async () => {
       const result = await openInPreferredEditor(keybindingsConfigPath);
       if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
@@ -1365,11 +1359,17 @@ export function KeybindingsSettingsPanel() {
         type: "error",
       });
     })();
-  }, [keybindingsConfigPath, openInPreferredEditor]);
+  }, [keybindingsConfigPath, openInPreferredEditor, primaryEnvironment]);
 
   const saveKeybinding = useCallback(
     (input: ServerUpsertKeybindingInput) => {
-      if (!primaryEnvironment) return;
+      if (
+        !primaryEnvironment ||
+        !connectedEnvironments.every((target) =>
+          readEnvironmentScope(target.environmentId, AuthSettingsWriteScope),
+        )
+      )
+        return;
       setSavingCommand(input.command);
       const payload: ServerUpsertKeybindingInput = {
         command: input.command,
@@ -1404,7 +1404,13 @@ export function KeybindingsSettingsPanel() {
 
   const removeKeybinding = useCallback(
     (row: KeybindingRow) => {
-      if (!primaryEnvironment) return;
+      if (
+        !primaryEnvironment ||
+        !connectedEnvironments.every((target) =>
+          readEnvironmentScope(target.environmentId, AuthSettingsWriteScope),
+        )
+      )
+        return;
       setSavingCommand(row.command);
       void (async () => {
         const results = await Promise.all(
@@ -1468,7 +1474,7 @@ export function KeybindingsSettingsPanel() {
           <Button
             type="button"
             variant="outline"
-            disabled={isAddingBinding}
+            disabled={isAddingBinding || !canWriteSettings}
             onClick={() => setIsAddingBinding(true)}
           >
             <PlusIcon aria-hidden className="size-4" />
@@ -1481,7 +1487,7 @@ export function KeybindingsSettingsPanel() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  disabled={!keybindingsConfigPath}
+                  disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
                   onClick={openKeybindingsFile}
                   aria-label="Open keybindings.json"
                 >
@@ -1494,33 +1500,40 @@ export function KeybindingsSettingsPanel() {
         </div>
       </SettingsSection>
 
-      {isAddingBinding ? (
-        <SettingsGroup>
-          <NewKeybindingSettingsRow
-            commandOptions={commandOptions}
-            allRows={rows}
-            variables={whenVariables}
-            isSaving={savingCommand !== null}
-            onSave={saveKeybinding}
-            onCancel={cancelAdd}
-          />
-        </SettingsGroup>
+      {!canWriteSettings ? (
+        <p className="text-xs text-muted-foreground">
+          This connection can view keybindings but cannot change them.
+        </p>
       ) : null}
+      <div inert={!canWriteSettings} className="flex flex-col gap-8">
+        {isAddingBinding ? (
+          <SettingsGroup>
+            <NewKeybindingSettingsRow
+              commandOptions={commandOptions}
+              allRows={rows}
+              variables={whenVariables}
+              isSaving={savingCommand !== null}
+              onSave={saveKeybinding}
+              onCancel={cancelAdd}
+            />
+          </SettingsGroup>
+        ) : null}
 
-      {groups.length > 0 ? (
-        <KeybindingsGroups
-          groups={groups}
-          anchorIds={anchorIds}
-          savingCommand={savingCommand}
-          {...rowActions}
-        />
-      ) : (
-        <SettingsGroup>
-          <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-            No keybindings match your search.
-          </div>
-        </SettingsGroup>
-      )}
+        {groups.length > 0 ? (
+          <KeybindingsGroups
+            groups={groups}
+            anchorIds={anchorIds}
+            savingCommand={savingCommand}
+            {...rowActions}
+          />
+        ) : (
+          <SettingsGroup>
+            <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+              No keybindings match your search.
+            </div>
+          </SettingsGroup>
+        )}
+      </div>
     </SettingsPageContainer>
   );
 }

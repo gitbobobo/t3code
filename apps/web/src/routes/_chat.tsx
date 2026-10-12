@@ -1,22 +1,28 @@
+import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
+import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarDeviceScope } from "../hooks/useSidebarDeviceScope";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  resolveThreadActionEnvironmentId,
+  startNewThreadFromContext,
+} from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
@@ -32,8 +38,11 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
-  const { activeThread, activeDraftThread, newThreadActionContext, routeThreadRef } =
-    useHandleNewThread();
+  const { newThreadActionContext, routeThreadRef } = useHandleNewThread();
+  const canOperatePreview = useEnvironmentScope(
+    routeThreadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
+  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -110,7 +119,7 @@ function ChatRouteGlobalShortcuts() {
 
       if (command === "chat.newWithoutProject") {
         const environmentId = scratchEnvironmentId(
-          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
+          resolveThreadActionEnvironmentId(newThreadActionContext, primaryEnvironmentId),
         );
         if (environmentId === null) return;
         event.preventDefault();
@@ -136,7 +145,7 @@ function ChatRouteGlobalShortcuts() {
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        if (!routeThreadRef) return;
+        if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;
         if (!isPreviewAvailableFor(routeThreadRef.environmentId)) {
           toastManager.add(
             stackedThreadToast({
@@ -163,6 +172,7 @@ function ChatRouteGlobalShortcuts() {
       ) {
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperatePreview) return;
         const action =
           command === "preview.refresh"
             ? "refresh"
@@ -182,9 +192,8 @@ function ChatRouteGlobalShortcuts() {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [
-    activeThread,
-    activeDraftThread,
     clearSelection,
+    canOperatePreview,
     keybindings,
     newThreadActionContext,
     previewOpen,
@@ -211,6 +220,9 @@ function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      {threadTarget?.kind === "server" ? (
+        <ThreadLinkPrompt threadRef={threadTarget.threadRef} />
+      ) : null}
       {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
     </>
   );

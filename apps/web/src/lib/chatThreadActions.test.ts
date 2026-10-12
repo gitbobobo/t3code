@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   resolveThreadActionProjectRef,
+  resolveThreadActionEnvironmentId,
   hasExplicitComposerModelSelection,
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
@@ -39,6 +40,39 @@ function createContext(overrides: Partial<ChatThreadActionContext> = {}): ChatTh
 }
 
 describe("chatThreadActions", () => {
+  it("starts a projectless thread on the selected device even while another device is open", () => {
+    expect(
+      resolveThreadActionEnvironmentId(
+        createContext({
+          scopeEnvironmentId: ENVIRONMENT_ID,
+          activeThread: { environmentId: OTHER_ENVIRONMENT_ID, projectId: PROJECT_ID },
+        }),
+        OTHER_ENVIRONMENT_ID,
+      ),
+    ).toBe(ENVIRONMENT_ID);
+  });
+
+  it("keeps the current thread, draft, and primary fallback for projectless threads without a device scope", () => {
+    expect(
+      resolveThreadActionEnvironmentId(
+        createContext({
+          activeThread: { environmentId: OTHER_ENVIRONMENT_ID, projectId: PROJECT_ID },
+        }),
+        ENVIRONMENT_ID,
+      ),
+    ).toBe(OTHER_ENVIRONMENT_ID);
+    expect(
+      resolveThreadActionEnvironmentId(
+        createContext({
+          activeDraftThread: { environmentId: OTHER_ENVIRONMENT_ID, projectId: PROJECT_ID },
+        }),
+        ENVIRONMENT_ID,
+      ),
+    ).toBe(OTHER_ENVIRONMENT_ID);
+    expect(resolveThreadActionEnvironmentId(createContext(), ENVIRONMENT_ID)).toBe(ENVIRONMENT_ID);
+    expect(resolveThreadActionEnvironmentId(createContext(), null)).toBeNull();
+  });
+
   it("only treats an active stored selection marked explicit as an explicit pick", () => {
     const draft = {
       activeProvider: PROJECT_DEFAULT_SELECTION.instanceId,

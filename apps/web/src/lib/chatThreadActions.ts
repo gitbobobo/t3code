@@ -91,6 +91,19 @@ export function resolveThreadActionProjectRef(
   return context.defaultProjectRef;
 }
 
+/** Threads without a project still honor the sidebar's selected device. */
+export function resolveThreadActionEnvironmentId(
+  context: ChatThreadActionContext,
+  fallback: EnvironmentId | null,
+): EnvironmentId | null {
+  return (
+    context.scopeEnvironmentId ??
+    context.activeThread?.environmentId ??
+    context.activeDraftThread?.environmentId ??
+    fallback
+  );
+}
+
 // New threads inherit only the *project* from the current context. Branch,
 // worktree, and env mode always come from the user's configured defaults —
 // carrying them over from the viewed thread meant "new thread" silently

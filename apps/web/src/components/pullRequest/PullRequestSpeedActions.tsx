@@ -1,11 +1,13 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { PullRequestAction } from "@t3tools/contracts";
+import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useUiStateStore } from "~/uiStateStore";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolvePullRequestMergeMethod } from "./pullRequestDetail.logic";
 import { PullRequestGlyph } from "./pullRequestIcons";
-import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
+import { pullRequestQuickActions, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import {
   usePullRequestActionRunner,
   usePullRequestDefaultMergeMethodResolver,
@@ -24,6 +26,7 @@ export interface PullRequestSpeedActionResult<Entry = EnvironmentPullRequestEntr
 /** No detail or stack reads until a merge is clicked, even on a long list. */
 export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntry>({
   entry,
+  hostActions,
   visible,
   onActed,
   closing = false,
@@ -31,12 +34,17 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
   onCloseSweepStart,
 }: {
   entry: Entry;
+  /** What the row's host can do; actions it cannot are not offered. */
+  hostActions: ReadonlySet<PullRequestAction>;
   visible: boolean;
   onActed?: (result: PullRequestSpeedActionResult<Entry>) => void;
   closing?: boolean;
   sweeping?: boolean;
   onCloseSweepStart?: (entry: Entry, event: PointerEvent) => void;
 }) {
+  const canWrite = useAtomValue(
+    pullRequestEnvironment.runAction.permissionAtom(entry.environmentId),
+  );
   const resolveProjectDefault = usePullRequestDefaultMergeMethodResolver(
     entry.environmentId,
     entry.projectId,
@@ -65,13 +73,9 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
       );
     },
   });
-  const actions =
-    entry.state === "closed"
-      ? (["reopen"] as const)
-      : entry.isDraft
-        ? (["close", "ready"] as const)
-        : (["close", "merge"] as const);
+  const actions = pullRequestQuickActions(entry, hostActions);
   const busy = actionPending || closing || sweeping;
+  if (actions.length === 0) return null;
   return (
     <div
       className="shrink-0 items-center gap-1 pr-3"
@@ -90,7 +94,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
                 <Button
                   variant={action === "close" ? "destructive-outline" : "outline"}
                   size="xs"
-                  disabled={busy || (action === "merge" && entry.stack !== undefined)}
+                  disabled={!canWrite || busy || (action === "merge" && entry.stack !== undefined)}
                   aria-label={`${label} #${entry.number}`}
                   onClick={() => void perform(action)}
                   onPointerDown={(event) => {
