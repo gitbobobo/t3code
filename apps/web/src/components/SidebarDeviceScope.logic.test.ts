@@ -12,6 +12,7 @@ import {
   resolveSidebarDeviceScope,
   selectVisibleSidebarDeviceCards,
   sidebarProjectGroupServesEnvironment,
+  resolveSidebarDeviceProject,
   type SidebarDeviceStatusCounts,
 } from "./SidebarDeviceScope.logic";
 
@@ -137,6 +138,7 @@ describe("countSidebarThreadsByDevice", () => {
     ]);
 
     expect(counts.get("env-a")).toEqual({
+      request: 0,
       approval: 1,
       input: 0,
       working: 1,
@@ -345,6 +347,7 @@ describe("resolveSidebarDeviceCountsState", () => {
 
 describe("resolveAllDevicesCountsState", () => {
   const counts = (overrides: Partial<SidebarDeviceStatusCounts>) => ({
+    request: 0,
     approval: 0,
     input: 0,
     working: 0,
@@ -457,5 +460,21 @@ describe("sidebarProjectGroupServesEnvironment", () => {
 
   it("rejects a group with no member on the selected device", () => {
     expect(sidebarProjectGroupServesEnvironment(members, "env-c")).toBe(false);
+  });
+});
+
+describe("resolveSidebarDeviceProject", () => {
+  const local = { environmentId: "local", id: "local-project", workspaceRoot: "/local/repo" };
+  const remote = { environmentId: "remote", id: "remote-project", workspaceRoot: "/remote/repo" };
+  const group = { ...local, memberProjects: [local, remote] };
+
+  it("targets the selected device rather than the logical group's representative", () => {
+    expect(resolveSidebarDeviceProject(group, "remote")).toBe(remote);
+    expect(resolveSidebarDeviceProject(group, "local")).toBe(local);
+  });
+
+  it("preserves the representative without a filter and rejects a missing device", () => {
+    expect(resolveSidebarDeviceProject(group, null)).toBe(group);
+    expect(resolveSidebarDeviceProject(group, "missing")).toBeNull();
   });
 });

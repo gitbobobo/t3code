@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import { resolveSidebarDeviceScope } from "../components/SidebarDeviceScope.logic";
-import { useLegacySidebarEnabled } from "./useSettings";
+import { useClientSettings } from "./useSettings";
 import { useEnvironments } from "../state/environments";
 import { useUiStateStore } from "../uiStateStore";
 
@@ -12,11 +12,8 @@ export function useSidebarDeviceScope() {
   const requestedEnvironmentId = useUiStateStore((state) => state.sidebarDeviceScopeKey);
   const setSidebarDeviceScopeKey = useUiStateStore((state) => state.setSidebarDeviceScopeKey);
   const { environments, isReady } = useEnvironments();
-  const legacySidebarEnabled = useLegacySidebarEnabled();
-  const environmentIds = useMemo(
-    () => environments.map((environment) => String(environment.environmentId)),
-    [environments],
-  );
+  const legacySidebarEnabled = useClientSettings((settings) => settings.legacySidebarEnabled);
+  const environmentIds = environments.map((environment) => String(environment.environmentId));
   const scopeEnvironmentId = resolveSidebarDeviceScope({
     enabled: !legacySidebarEnabled,
     catalogReady: isReady,
@@ -24,6 +21,7 @@ export function useSidebarDeviceScope() {
     requestedEnvironmentId,
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears a persisted device preference when the environment catalog permanently removes it
   useEffect(() => {
     if (
       isReady &&

@@ -21,6 +21,7 @@ const SIDEBAR_DEVICE_GRID_VISIBLE_CARDS = 4;
 /** Display order: needs-attention first, then motion, then the resting
     state — the same priority reading the row pills use. */
 const DEVICE_STATUS_ORDER: readonly SidebarThreadStatus[] = [
+  "request",
   "approval",
   "input",
   "working",
@@ -31,6 +32,7 @@ const DEVICE_STATUS_ORDER: readonly SidebarThreadStatus[] = [
 ];
 
 const DEVICE_STATUS_LABELS: Record<SidebarThreadStatus, string> = {
+  request: "pending request",
   approval: "pending approval",
   input: "awaiting input",
   working: "working",
@@ -42,6 +44,7 @@ const DEVICE_STATUS_LABELS: Record<SidebarThreadStatus, string> = {
 
 // Semantic colors follow the client's theme for attention, work, and failure.
 const DEVICE_STATUS_DOT_CLASS_NAMES: Record<SidebarThreadStatus, string> = {
+  request: "bg-warning",
   approval: "bg-warning",
   input: "bg-primary",
   working: "bg-info",

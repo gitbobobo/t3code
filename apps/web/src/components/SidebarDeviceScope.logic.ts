@@ -50,6 +50,7 @@ export function canCreateThreadInSidebarDeviceScope(input: {
 
 export function createEmptySidebarDeviceStatusCounts(): SidebarDeviceStatusCounts {
   return {
+    request: 0,
     approval: 0,
     input: 0,
     working: 0,
@@ -219,4 +220,27 @@ export function sidebarProjectGroupServesEnvironment(
     environmentId === null ||
     memberProjectRefs.some((projectRef) => projectRef.environmentId === environmentId)
   );
+}
+
+/** Folder actions must target a member on the selected device, even when another
+ * machine represents the logical project in the sidebar. */
+export function resolveSidebarDeviceProject<
+  TEnvironmentId extends string,
+  TProjectId extends string,
+>(
+  group: {
+    readonly environmentId: TEnvironmentId;
+    readonly id: TProjectId;
+    readonly workspaceRoot: string;
+    readonly memberProjects: readonly {
+      readonly environmentId: TEnvironmentId;
+      readonly id: TProjectId;
+      readonly workspaceRoot: string;
+    }[];
+  },
+  environmentId: string | null,
+) {
+  return environmentId === null
+    ? group
+    : (group.memberProjects.find((project) => project.environmentId === environmentId) ?? null);
 }
