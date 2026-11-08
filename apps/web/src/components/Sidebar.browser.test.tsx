@@ -57,7 +57,7 @@ describe("sidebar header new thread", () => {
       environmentId: projects[0]!.environmentId,
       projectId: projects[0]!.id,
     };
-    const startThread = vi.fn().mockResolvedValue(null);
+    const startThread = vi.fn().mockResolvedValue("draft");
     vi.mocked(useProjects).mockReturnValue(projects);
     vi.mocked(useHandleNewThread).mockReturnValue({
       activeDraftThread: null,

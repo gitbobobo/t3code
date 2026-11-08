@@ -31,6 +31,12 @@ vi.mock("../hooks/useHandleNewThread", () => ({
   useHandleNewThread: () => ({
     activeDraftThread: null,
     activeThread: null,
+    newThreadActionContext: {
+      activeDraftThread: null,
+      activeThread: undefined,
+      defaultProjectRef: null,
+      handleNewThread: async () => undefined,
+    },
     defaultProjectRef: null,
     handleNewThread: async () => undefined,
   }),
