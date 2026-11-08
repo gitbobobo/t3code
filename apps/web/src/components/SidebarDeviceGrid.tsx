@@ -24,6 +24,7 @@ const DEVICE_STATUS_ORDER: readonly SidebarThreadStatus[] = [
   "request",
   "approval",
   "input",
+  "preparing",
   "working",
   "waiting",
   "failed",
@@ -35,6 +36,7 @@ const DEVICE_STATUS_LABELS: Record<SidebarThreadStatus, string> = {
   request: "pending request",
   approval: "pending approval",
   input: "awaiting input",
+  preparing: "preparing",
   working: "working",
   waiting: "waiting",
   failed: "failed",
@@ -47,6 +49,7 @@ const DEVICE_STATUS_DOT_CLASS_NAMES: Record<SidebarThreadStatus, string> = {
   request: "bg-warning",
   approval: "bg-warning",
   input: "bg-primary",
+  preparing: "bg-info",
   working: "bg-info",
   // Waiting keeps the row label's full-strength muted tone so open background
   // work reads louder than a fully resting (ready) thread.

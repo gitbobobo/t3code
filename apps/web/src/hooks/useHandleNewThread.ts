@@ -436,10 +436,11 @@ export function resolveDefaultProjectRef(
   scopeEnvironmentId: EnvironmentId | null = null,
 ): ScopedProjectRef | null {
   const [defaultProject] = orderItemsByPreferredIds({
-    items:
-      scopeEnvironmentId === null
-        ? projects
-        : projects.filter((project) => project.environmentId === scopeEnvironmentId),
+    items: projects.filter(
+      (project) =>
+        project.archivedAt == null &&
+        (scopeEnvironmentId === null || project.environmentId === scopeEnvironmentId),
+    ),
     preferredIds: projectOrder,
     getId: getProjectOrderKey,
     getPreferenceIds: (project) => [

@@ -350,6 +350,7 @@ describe("resolveAllDevicesCountsState", () => {
     request: 0,
     approval: 0,
     input: 0,
+    preparing: 0,
     working: 0,
     waiting: 0,
     failed: 0,

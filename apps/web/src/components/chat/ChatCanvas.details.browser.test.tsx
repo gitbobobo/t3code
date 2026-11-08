@@ -54,7 +54,12 @@ function Workspace({ player = preview }: { player?: ChatCanvasPreview | null }) 
   return (
     <ChatCanvas store={store} threadRef={threadRef} preview={player} composerOverlayElement={null}>
       <Preview />
-      <ThreadDetailsCard threadRef={threadRef} anchor={{ current: null }} handle={handle}>
+      <ThreadDetailsCard
+        contentKey="test"
+        threadRef={threadRef}
+        anchor={{ current: null }}
+        handle={handle}
+      >
         {() => <div>Thread controls</div>}
       </ThreadDetailsCard>
     </ChatCanvas>
