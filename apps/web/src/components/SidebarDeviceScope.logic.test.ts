@@ -141,6 +141,7 @@ describe("countSidebarThreadsByDevice", () => {
       request: 0,
       approval: 1,
       input: 0,
+      preparing: 0,
       working: 1,
       waiting: 0,
       failed: 0,

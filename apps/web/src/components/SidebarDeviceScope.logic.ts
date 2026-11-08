@@ -4,7 +4,7 @@ import type { SidebarThreadSummary } from "../types";
 
 import {
   hasUnseenCompletion,
-  isSidebarSubagentThread,
+  isSidebarHiddenThread,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
   type SidebarThreadStatus,
@@ -86,7 +86,7 @@ export function countSidebarThreadsByDevice<
     if (
       thread.archivedAt !== null ||
       thread.settledOverride === "settled" ||
-      isSidebarSubagentThread(thread)
+      isSidebarHiddenThread(thread)
     )
       continue;
     const counts = {
